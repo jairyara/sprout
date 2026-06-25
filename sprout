@@ -1,0 +1,382 @@
+#!/bin/sh
+# sprout — universal project scaffolder. Interactive wizard by default; flags for CI.
+# Two planes: global CLIs (validated, not vendored) + Agent Skills (downloaded & vendored).
+set -e
+
+# ── resolve real dir (follow symlinks) ───────────────────────────────────────
+SELF="$0"
+while [ -L "$SELF" ]; do
+    L="$(readlink "$SELF")"
+    case "$L" in
+        /*) SELF="$L" ;;
+        *)  SELF="$(dirname "$SELF")/$L" ;;
+    esac
+done
+SPROUT_DIR="$(cd "$(dirname "$SELF")" && pwd)"
+export SPROUT_DIR
+
+. "$SPROUT_DIR/lib/common.sh"
+. "$SPROUT_DIR/lib/prompt.sh"
+
+VERSION="0.1.0"
+TYPES="web fullstack desktop mobile ext"
+TAB="$(printf '\t')"
+
+# defaults
+DRY_RUN=0
+AGENTS_SEL="claude"
+SKILLS_SEL=""
+INSTALL_CLIS=0
+CLIS_INSTALL=""
+STACK=""
+DB=""          # fullstack database: sqlite|postgres|mysql
+PM=""
+# web stack choices (recipe-specific; set by the wizard or these flags)
+BASE=""        # astro | vanilla
+CSS=""         # none | sass | less | tailwind | bootstrap
+LANG=""        # ts | js
+LINTER=""      # biome | eslint | none
+TESTING=""     # none | playwright | vitest
+GIT_INIT=0     # 1 = git init + first commit
+NONINTERACTIVE=0
+
+usage() {
+    cat <<EOF
+sprout $VERSION — scaffold a project with your stack, skills and agent context ready.
+
+Usage:
+  sprout                                  interactive wizard (default)
+  sprout <type> <name> [options]          non-interactive
+  sprout list | doctor | skills <cmd>
+
+Types:   web  fullstack  desktop  mobile  ext      (Phase 1 ships: web)
+
+Options:
+  --pm <name>             JS package manager: pnpm|npm|yarn|bun (def: pnpm if present)
+  --base <name>           web base: astro|vanilla (def: astro)
+  --css <name>            web css: none|sass|less|tailwind|bootstrap (def: tailwind)
+  --lang <name>           web language: ts|js (def: ts)
+  --linter <name>         web linter: none|biome|eslint (def: none)
+  --test "a,b"            web testing (any/both): playwright,vitest (def: none)
+  --git / --no-git        git init + first commit after scaffold (def: no)
+  --stack <name>          stack variant (e.g. fullstack: laravel|django|fastapi)
+  --skills "a,b@1.2.0"    override the skill set; pin a skill with name@ref
+  --agent  "claude gemini codex copilot opencode"   agent context to wire (def: claude)
+  --clis   "gh,fzf"       install only these missing global CLIs (the wizard sets this)
+  --install-clis          install ALL missing global CLIs (default: only warn)
+  --dry-run               print what would happen, do nothing
+  -h, --help              this help
+      --version           print version
+
+Skills subcommands (run inside a generated project, or pass a dir):
+  sprout skills add <name[@ref]> [dir]    download & vendor one more skill
+  sprout skills update [name] [dir]       re-resolve to latest, update lock + table
+
+Examples:
+  sprout
+  sprout web my-site
+  sprout web my-site --skills "frontend-design@1.2.0,impeccable" --agent "claude gemini"
+  sprout --dry-run web demo
+EOF
+}
+
+# ── shared helpers used by recipes ───────────────────────────────────────────
+
+# skills_for_type <type> -> space-separated skill names (core + type set)
+skills_for_type() {
+    _c="$(read_list "$SPROUT_DIR/sets/core.list")"
+    _t="$(read_list "$SPROUT_DIR/sets/$1.list")"
+    printf '%s %s' "$_c" "$_t" | tr -s ' '
+}
+
+# skill_items_for_type <type> — "name|name — <what it's for>" lines for the wizard,
+# pulling the short description from the registry's auto_invoke column.
+skill_items_for_type() {
+    for _s in $(skills_for_type "$1"); do
+        _d="$(awk -F '\t' -v n="$_s" '
+            /^[[:space:]]*#/ { next } { gsub(/^[ \t]+|[ \t]+$/, "", $1) }
+            $1 == n { print $5; exit }' "$SPROUT_DIR/skills/registry.tsv")"
+        if [ -n "$_d" ]; then printf '%s|%-27s — %s\n' "$_s" "$_s" "$_d"
+        else                  printf '%s|%s\n' "$_s" "$_s"; fi
+    done
+}
+
+# clis_for_type <type> — "name|name (installed|missing) — <desc>" lines for the picker
+clis_for_type() {
+    _t="$1"
+    while IFS="$TAB" read -r name brew pac phase types desc; do
+        case "$name" in ''|\#*|name) continue ;; esac
+        echo "$types" | tr ',' '\n' | grep -qx core 2>/dev/null \
+            || echo "$types" | tr ',' '\n' | grep -qx "$_t" 2>/dev/null || continue
+        _tag="(missing)"; have "$name" && _tag="(installed)"
+        printf '%s|%-9s %-11s — %s\n' "$name" "$name" "$_tag" "$desc"
+    done < "$SPROUT_DIR/clis/manifest.tsv"
+}
+
+# clis_missing <type> — space-separated names of core+type CLIs not on PATH
+clis_missing() {
+    _t="$1"; _out=""
+    while IFS="$TAB" read -r name brew pac phase types desc; do
+        case "$name" in ''|\#*|name) continue ;; esac
+        echo "$types" | tr ',' '\n' | grep -qx core 2>/dev/null \
+            || echo "$types" | tr ',' '\n' | grep -qx "$_t" 2>/dev/null || continue
+        have "$name" || _out="$_out $name"
+    done < "$SPROUT_DIR/clis/manifest.tsv"
+    printf '%s' "$_out" | sed 's/^ *//'
+}
+
+# apply_overlay <project_dir> <type> — copy common + type overlay over the scaffold.
+# Preserves the scaffolder's .gitignore (merges overlay lines in) instead of clobbering it.
+apply_overlay() {
+    _dir="$1"; _type="$2"
+    say "applying overlay (common + $_type)"
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+        for _src in "$SPROUT_DIR/overlays/common" "$SPROUT_DIR/overlays/$_type"; do
+            [ -d "$_src" ] && dim "  would copy $_src/* into $_dir (merging .gitignore)"
+        done
+        return 0
+    fi
+    for _src in "$SPROUT_DIR/overlays/common" "$SPROUT_DIR/overlays/$_type"; do
+        [ -d "$_src" ] || continue
+        # remember the scaffolder's .gitignore so cp doesn't lose it
+        _keep=""; [ -f "$_dir/.gitignore" ] && _keep="$(cat "$_dir/.gitignore")"
+        cp -R "$_src/." "$_dir/" 2>/dev/null || true
+        if [ -n "$_keep" ] && [ -f "$_src/.gitignore" ]; then
+            printf '%s\n' "$_keep" > "$_dir/.gitignore"          # scaffolder lines first
+            while IFS= read -r _l || [ -n "$_l" ]; do            # then overlay's unique lines
+                [ -n "$_l" ] || continue
+                grep -qxF "$_l" "$_dir/.gitignore" 2>/dev/null || printf '%s\n' "$_l" >> "$_dir/.gitignore"
+            done < "$_src/.gitignore"
+        fi
+    done
+}
+
+# render_agents_md <project_dir> <name> <type> <stack>
+render_agents_md() {
+    _dir="$1"; _name="$2"; _type="$3"; _stack="${4:-—}"
+    say "writing AGENTS.md"
+    if [ "$DRY_RUN" = 1 ]; then dim "  would render $_dir/AGENTS.md from template"; return 0; fi
+    sed -e "s/{{PROJECT_NAME}}/$_name/g" \
+        -e "s/{{PROJECT_TYPE}}/$_type/g" \
+        -e "s/{{PROJECT_STACK}}/$_stack/g" \
+        "$SPROUT_DIR/templates/AGENTS.md.tmpl" > "$_dir/AGENTS.md"
+}
+
+# validate_clis <type> — check presence of core+type CLIs; warn or install missing
+validate_clis() {
+    _type="$1"; _missing=0
+    head "CLIs (global)"
+    while IFS="$TAB" read -r name brew pac phase types desc; do
+        case "$name" in ''|\#*|name) continue ;; esac
+        # applies if types contains "core" or the project type
+        echo "$types" | tr ',' '\n' | grep -qx core 2>/dev/null \
+            || echo "$types" | tr ',' '\n' | grep -qx "$_type" 2>/dev/null || continue
+        if have "$name"; then
+            ok "present: $name"
+        else
+            _missing=1
+            if [ "$INSTALL_CLIS" = 1 ] || in_list "$name" "${CLIS_INSTALL:-}"; then
+                say "installing $name"
+                pkg_install "$brew" "$pac"
+            else
+                warn "missing: $name  (install with brew '$brew' / pacman '$pac', or rerun with --install-clis)"
+            fi
+        fi
+    done < "$SPROUT_DIR/clis/manifest.tsv"
+    [ "$_missing" = 0 ] && ok "all required CLIs present"
+    return 0
+}
+
+# ── doctor helpers ─────────────────────────────────────────────────────────────
+# _chk_any "<ok-label>" "<miss-hint>" cmd1 cmd2 ...  — ok if ANY cmd is present.
+_chk_any() {
+    _lbl="$1"; _hint="$2"; shift 2
+    for _c in "$@"; do have "$_c" && { ok "$_lbl ($_c)"; return 0; }; done
+    warn "$_hint"
+}
+
+# ── subcommands ──────────────────────────────────────────────────────────────
+
+cmd_list() {
+    head "Types";  printf '  %s\n' $TYPES
+    head "Skills (registry)"
+    awk -F "$TAB" '/^[[:space:]]*#/||$1=="name"{next} NF>=5 {printf "  %-28s %s\n", $1, $5}' "$SPROUT_DIR/skills/registry.tsv"
+    head "CLIs (manifest)"
+    awk -F "$TAB" '/^[[:space:]]*#/||$1=="name"{next} NF>=6 {printf "  %-10s %s\n", $1, $6}' "$SPROUT_DIR/clis/manifest.tsv"
+}
+
+cmd_doctor() {
+    head "base"
+    if have git; then ok "present: git"
+    else warn "missing: git — needed for 'git init' and skill downloads"; fi
+    _js="$(default_pm_js)"
+    if have "$_js"; then ok "JS package manager: $_js"
+    else warn "no JS package manager (pnpm/npm/yarn/bun) — needed for web, ext, mobile (expo)"; fi
+
+    head "scaffolders & toolchains (per type — only what you'll scaffold)"
+    dim "  web       — uses your JS package manager (Astro/Vite); no extra tool"
+    _chk_any "fullstack/laravel" \
+        "fullstack(laravel): install PHP + 'composer' or the 'laravel' installer (laravel.com); or use --stack django|fastapi" \
+        laravel composer
+    _chk_any "fullstack/python" \
+        "fullstack(django|fastapi): install 'uv' (astral.sh/uv) or python3" \
+        uv python3
+    _chk_any "desktop/tauri+egui (Rust)" \
+        "desktop(tauri|egui): install Rust via rustup.rs ('cargo')" \
+        cargo
+    _chk_any "desktop/wails+fyne (Go)" \
+        "desktop(wails|fyne): install Go (go.dev); wails also needs the 'wails' CLI (wails.io)" \
+        go
+    _chk_any "mobile/flutter" \
+        "mobile(flutter): install the Flutter SDK (flutter.dev)" \
+        flutter
+    _chk_any "mobile/swift" \
+        "mobile(swift): install Xcode / the Swift toolchain" \
+        swift
+    dim "  mobile/react-native & ext — use your JS package manager (Expo/wxt via npx)"
+
+    validate_clis core
+}
+
+cmd_skills() {
+    _sub="${1:-}"; shift 2>/dev/null || true
+    case "$_sub" in
+        add)
+            _spec="$1"; _dir="${2:-$PWD}"
+            [ -n "$_spec" ] || { err "usage: sprout skills add <name[@ref]> [dir]"; exit 1; }
+            DRY_RUN="$DRY_RUN" "$SPROUT_DIR/skills/resolve.sh" "$_dir" "$_spec"
+            "$SPROUT_DIR/skills/sync-agents.sh" "$_dir" ;;
+        update)
+            _name="$1"; _dir="${2:-$PWD}"
+            if [ -n "$_name" ] && [ -d "$_name" ]; then _dir="$_name"; _name=""; fi
+            if [ -n "$_name" ]; then _specs="$_name@latest"; else
+                _specs="$(awk -F "$TAB" '/^[[:space:]]*#/{next} NF>=1{print $1"@latest"}' "$_dir/skills.lock" 2>/dev/null | tr '\n' ' ')"
+            fi
+            [ -n "$_specs" ] || { err "nothing to update in $_dir"; exit 1; }
+            # shellcheck disable=SC2086
+            DRY_RUN="$DRY_RUN" "$SPROUT_DIR/skills/resolve.sh" "$_dir" $_specs
+            "$SPROUT_DIR/skills/sync-agents.sh" "$_dir" ;;
+        *) err "unknown skills subcommand: '$_sub' (use add|update)"; exit 1 ;;
+    esac
+}
+
+# ── recipe runner ────────────────────────────────────────────────────────────
+
+run_recipe() {
+    TYPE="$1"; shift
+    PROJECT_NAME=""
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --stack)       STACK="$2"; shift 2 ;;
+            --db)          DB="$2"; shift 2 ;;
+            --pm)          PM="$2"; shift 2 ;;
+            --base)        BASE="$2"; shift 2 ;;
+            --css)         CSS="$2"; shift 2 ;;
+            --lang)        LANG="$2"; shift 2 ;;
+            --linter)      LINTER="$2"; shift 2 ;;
+            --test)        TESTING="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
+            --git)         GIT_INIT=1; shift ;;
+            --no-git)      GIT_INIT=0; shift ;;
+            --skills)      SKILLS_SEL="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
+            --agent)       AGENTS_SEL="$2"; shift 2 ;;
+            --clis)        CLIS_INSTALL="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
+            --install-clis) INSTALL_CLIS=1; shift ;;
+            --dry-run)     DRY_RUN=1; shift ;;
+            -*)            err "unknown option: $1"; exit 1 ;;
+            *)             [ -z "$PROJECT_NAME" ] && PROJECT_NAME="$1"; shift ;;
+        esac
+    done
+    [ -n "$PROJECT_NAME" ] || { err "missing project name: sprout $TYPE <name>"; exit 1; }
+    [ -f "$SPROUT_DIR/recipes/$TYPE.sh" ] || { err "type '$TYPE' has no recipe yet (Phase 2)"; exit 1; }
+
+    [ -n "$SKILLS_SEL" ] || SKILLS_SEL="$(skills_for_type "$TYPE")"
+    [ -n "$PM" ] || PM="$(default_pm_js)"
+    PROJECT_DIR="$PWD/$PROJECT_NAME"
+    export PROJECT_NAME PROJECT_DIR TYPE STACK PM AGENTS_SEL SKILLS_SEL DRY_RUN INSTALL_CLIS CLIS_INSTALL
+    export BASE CSS LANG LINTER TESTING GIT_INIT DB
+
+    head "sprout — $TYPE: $PROJECT_NAME"
+    . "$SPROUT_DIR/recipes/$TYPE.sh"
+    recipe_run
+}
+
+# ── wizard ───────────────────────────────────────────────────────────────────
+
+wizard() {
+    head "sprout — new project"
+
+    # 1 · type
+    # Only types with a recipe are buildable; the rest show "(soon)" and re-prompt.
+    while :; do
+        TYPE="$(pick_one 'What do you want to build?' web "$(printf '%s\n' \
+            'web|web        Astro or Vanilla  →  CSS  →  JS/TS' \
+            'fullstack|fullstack  Laravel · Django · FastAPI' \
+            'desktop|desktop    Tauri · Wails · Fyne · egui' \
+            'mobile|mobile     React Native · Flutter · Kotlin · Swift' \
+            'ext|ext        Chromium extension (MV3)')")"
+        [ -f "$SPROUT_DIR/recipes/$TYPE.sh" ] && break
+        warn "'$TYPE' isn't ready yet — it lands in Phase 2. Pick 'web' for now."
+    done
+
+    PROJECT_NAME="$(ask_value '     project name' "my-$TYPE")"
+
+    # recipe-specific stack questions (web: base/css/lang/linter/test/git).
+    # Sourcing the recipe defines recipe_run (+ optional recipe_configure).
+    if [ -f "$SPROUT_DIR/recipes/$TYPE.sh" ]; then
+        . "$SPROUT_DIR/recipes/$TYPE.sh"
+        command -v recipe_configure >/dev/null 2>&1 && recipe_configure
+    fi
+
+    # JS package manager — only relevant for JS stacks (web). Offer all four, tagged.
+    if [ "$TYPE" = web ]; then
+        _pm_items="$(for _p in pnpm npm yarn bun; do
+            if have "$_p"; then printf '%s|%s  (installed)\n' "$_p" "$_p"
+            else               printf '%s|%s  (missing)\n'   "$_p" "$_p"; fi
+        done)"
+        _pm_default="$(for _p in pnpm npm yarn bun; do have "$_p" && { echo "$_p"; break; }; done)"
+        [ -n "$_pm_default" ] || _pm_default="npm"
+        PM="$(pick_one 'Package manager' "$_pm_default" "$_pm_items")"
+        if ! have "$PM"; then
+            if ask_yn "     $PM isn't installed — install it now?" y; then ensure_pm "$PM"
+            else warn "$PM not installed — scaffolding will fall back to an empty dir"; fi
+        fi
+    fi
+
+    # skills — checkbox list (all candidates preselected), each with what it's for
+    _skill_items="$(skill_items_for_type "$TYPE")"
+    _skill_pre="$(skills_for_type "$TYPE")"
+    SKILLS_SEL="$(pick_many 'Skills to vendor  (each line says what it is for)' "$_skill_pre" "$_skill_items")"
+
+    # agent context — checkbox list (claude preselected)
+    _agent_items="$(printf '%s\n' claude gemini codex copilot opencode)"
+    AGENTS_SEL="$(pick_many 'Agent context to wire' 'claude' "$_agent_items")"
+    [ -n "$AGENTS_SEL" ] || AGENTS_SEL="claude"
+
+    # CLIs — checkbox list; missing ones preselected to install
+    _cli_items="$(clis_for_type "$TYPE")"
+    _cli_pre="$(clis_missing "$TYPE")"
+    CLIS_INSTALL="$(pick_many 'Global CLIs to install (already-present ones are skipped)' "$_cli_pre" "$_cli_items")"
+
+    run_recipe "$TYPE" "$PROJECT_NAME" \
+        --pm "$PM" \
+        --skills "$(echo "$SKILLS_SEL" | tr ' ' ',')" \
+        --agent "$AGENTS_SEL" \
+        --clis "$(echo "$CLIS_INSTALL" | tr ' ' ',')"
+}
+
+# ── dispatch ─────────────────────────────────────────────────────────────────
+
+# allow a leading --dry-run before the subcommand (e.g. `sprout --dry-run web x`)
+case "${1:-}" in --dry-run) DRY_RUN=1; shift ;; esac
+
+cmd="${1:-}"
+case "$cmd" in
+    ""|wizard)                         wizard ;;
+    web|fullstack|desktop|mobile|ext)  run_recipe "$@" ;;
+    list)                              cmd_list ;;
+    doctor)                            cmd_doctor ;;
+    skills)                            shift; cmd_skills "$@" ;;
+    -h|--help)                         usage ;;
+    --version)                         echo "sprout $VERSION" ;;
+    *)                                 err "unknown command: $cmd"; usage; exit 1 ;;
+esac

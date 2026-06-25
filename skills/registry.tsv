@@ -1,0 +1,30 @@
+# registry.tsv — index of installable Agent Skills. TAB-separated (real tabs).
+# sprout does NOT bundle skill bodies; it downloads them on demand from these
+# sources, pins them, and vendors a copy into the generated project + skills.lock.
+#
+# Columns (TAB-separated):
+#   name  source  ref  scope  auto_invoke  [cli]
+#   source: git:<url>[#<subpath>]  |  skillsh:<url>#<skill>  |  TODO:source
+#   cli:    optional — "<tool> (global|project)" when this skill documents a CLI
+#
+# Prefer git sources (pinned SHA in skills.lock, offline cache, no Node needed).
+# Regenerated from registry.md. skillsh:* rows are fetched via `npx skills add` and
+# pinned by content hash; they need Node/npx and run a bit slower than git sources.
+name	source	ref	scope	auto_invoke	cli
+systematic-debugging	git:https://github.com/obra/superpowers#skills/systematic-debugging	main	core	debugging a bug or unexpected behavior
+brainstorming	git:https://github.com/obra/superpowers#skills/brainstorming	main	core	exploring ideas or scoping a feature
+conventional-commits	git:https://github.com/github/awesome-copilot#skills/conventional-commit	main	core	writing a commit or opening a PR
+prompt-engineering	skillsh:https://github.com/wshobson/agents#prompt-engineering-patterns	latest	core	writing prompts for an agent or model
+frontend-design	git:https://github.com/anthropics/skills#skills/frontend-design	main	web	creating or editing UI components
+webapp-testing	git:https://github.com/anthropics/skills#skills/webapp-testing	main	web	writing or running browser / e2e tests	playwright (project)
+interface-design	skillsh:https://github.com/dammyjay93/interface-design#interface-design	latest	web	designing screens, layout or interaction
+impeccable	git:https://github.com/pbakaus/impeccable#skill	main	web	polishing visual design, styles, spacing
+vercel-react-best-practices	skillsh:https://github.com/vercel-labs/agent-skills#vercel-react-best-practices	latest	web	writing React in a Next.js/Vercel app
+accessibility	skillsh:https://github.com/addyosmani/web-quality-skills#accessibility	latest	web	checking a11y, semantics or ARIA
+taste	git:https://github.com/Leonxlnx/taste-skill#skills/taste-skill	main	web	applying refined frontend design taste
+webgpu	git:https://github.com/dgreenheck/webgpu-claude-skill#skills/webgpu-threejs-tsl	main	web	writing WebGPU / Three.js TSL shaders
+ui-ux-pro-max	skillsh:https://github.com/nextlevelbuilder/ui-ux-pro-max-skill#ui-ux-pro-max	latest	web	high-end UI/UX design intelligence
+api-design-principles	skillsh:https://github.com/wshobson/agents#api-design-principles	latest	fullstack	designing an HTTP endpoint or API
+error-handling-patterns	skillsh:https://github.com/wshobson/agents#error-handling-patterns	latest	fullstack	handling errors or failure paths
+postgresql	skillsh:https://github.com/wshobson/agents#postgresql-table-design	latest	fullstack	writing SQL or schema for PostgreSQL
+changelog-generator	skillsh:https://github.com/composiohq/awesome-claude-skills#changelog-generator	latest	fullstack	generating a changelog or release notes

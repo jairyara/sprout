@@ -1,0 +1,12 @@
+# Dependencies / build
+node_modules/
+dist/
+.cache/
+.DS_Store
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Agent symlinks are appended below by sprout's skills/setup.sh
