@@ -19,7 +19,12 @@ agent — do not spawn subagents.
 2. **Resolve ambiguity before writing.** Ask the user about every item under "Open
    questions" and any acceptance criterion that isn't observable/checkable. Don't guess on
    anything that changes scope.
-3. Derive `<feature>` from the brief's feature name (kebab-case). Create
+3. **Skills check.** Read the brief's "Skills to use / add" section and compare against
+   AGENTS.md ("More skills you can add" catalog). If the feature would benefit from a skill
+   that isn't installed yet — whether the user named it or you spot the need — surface the
+   best-fitting catalog skill(s), explain what each does, and offer to install with
+   `sprout skills add <name>`. Only run it after the user confirms; never auto-install.
+4. Derive `<feature>` from the brief's feature name (kebab-case). Create
    `sdd/specs/<feature>/` and write `spec.md` from `sdd/templates/spec.md`:
    - Fill `{{FEATURE}}` and `{{DATE}}` (today, YYYY-MM-DD).
    - **Number the acceptance criteria** (AC1, AC2, …) — plan and verify reference them.

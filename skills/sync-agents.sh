@@ -1,8 +1,10 @@
 #!/bin/sh
-# sync-agents.sh — (re)generate the "Auto-invoke Skills" table in AGENTS.md from the
-# frontmatter of every vendored skill (its `name` + `auto_invoke`). This is what the
-# `skill-sync` meta-skill runs; agents do not reliably self-invoke on Trigger alone,
-# so the table in AGENTS.md forces it.
+# sync-agents.sh — (re)generate two tables in AGENTS.md:
+#   1. "Auto-invoke Skills"  — from the frontmatter of every VENDORED skill (forced use).
+#   2. "More skills you can add" — the registry catalog MINUS what's vendored, so the agent
+#      can suggest installing a better-fitting skill via `sprout skills add <name>`.
+# Agents don't reliably self-invoke on Trigger alone, and they can't suggest what they
+# can't see — so both tables live in AGENTS.md.
 #
 # Usage:  sync-agents.sh <project_dir>
 set -e
@@ -14,15 +16,14 @@ PROJECT_DIR="$1"
 [ -n "$PROJECT_DIR" ] || { err "sync-agents.sh: missing <project_dir>"; exit 1; }
 AGENTS_MD="$PROJECT_DIR/AGENTS.md"
 SKILLS_DIR="$PROJECT_DIR/skills"
+REGISTRY="$SPROUT_DIR/skills/registry.tsv"
+TAB="$(printf '\t')"
 if [ ! -f "$AGENTS_MD" ]; then
     if [ "${DRY_RUN:-0}" = 1 ]; then
-        say "would regenerate the auto-invoke table in $AGENTS_MD"; exit 0
+        say "would regenerate the skill tables in $AGENTS_MD"; exit 0
     fi
     err "AGENTS.md not found in $PROJECT_DIR"; exit 1
 fi
-
-BEGIN='<!-- BEGIN AUTO-INVOKE -->'
-END='<!-- END AUTO-INVOKE -->'
 
 # read a frontmatter scalar (first match) from a SKILL.md: fm_get <file> <key>
 fm_get() {
@@ -40,9 +41,10 @@ fm_get() {
     ' "$1"
 }
 
-# build the table body
+# ── 1 · auto-invoke table (vendored skills) ─────────────────────────────────────
 table="| When you are about to…            | Invoke FIRST the skill(s)        |
 |-----------------------------------|----------------------------------|"
+vendored=" "
 found=0
 if [ -d "$SKILLS_DIR" ]; then
     for sk in "$SKILLS_DIR"/*/SKILL.md; do
@@ -51,34 +53,54 @@ if [ -d "$SKILLS_DIR" ]; then
         trig="$(fm_get "$sk" auto_invoke)"; [ -n "$trig" ] || trig="(see skill description)"
         table="$table
 | $trig | $name |"
+        vendored="$vendored$name "
         found=1
     done
 fi
 [ "$found" = 1 ] || table="$table
 | (no skills vendored yet) | — |"
 
+# ── 2 · catalog table (registry minus vendored) ─────────────────────────────────
+catalog="| For… (when it fits the task)      | Skill            | Install with                |
+|-----------------------------------|------------------|-----------------------------|"
+catfound=0
+if [ -f "$REGISTRY" ]; then
+    while IFS="$TAB" read -r rname rsrc rref rscope rinv rcli; do
+        case "$rname" in ''|\#*|name) continue ;; esac
+        case "$vendored" in *" $rname "*) continue ;; esac   # already vendored — skip
+        [ -n "$rinv" ] || rinv="(see registry)"
+        catalog="$catalog
+| $rinv | $rname | sprout skills add $rname |"
+        catfound=1
+    done < "$REGISTRY"
+fi
+[ "$catfound" = 1 ] || catalog="$catalog
+| (all catalog skills are installed) | — | — |"
+
 if [ "${DRY_RUN:-0}" = 1 ]; then
-    head "AGENTS.md auto-invoke table (dry-run)"; printf '%s\n' "$table"; exit 0
+    head "AGENTS.md auto-invoke table (dry-run)";  printf '%s\n' "$table"
+    head "AGENTS.md skill catalog (dry-run)";      printf '%s\n' "$catalog"
+    exit 0
 fi
 
-# splice the table between the markers (create the block if missing).
-# The table is multi-line, so pass it via a temp file (awk -v can't hold newlines).
-tmp="$(mktemp)"; tbl="$(mktemp)"
-printf '%s\n' "$table" > "$tbl"
-if grep -qF "$BEGIN" "$AGENTS_MD"; then
-    awk -v b="$BEGIN" -v e="$END" -v tblfile="$tbl" '
-        index($0, b) { print; while ((getline line < tblfile) > 0) print line; skip=1; next }
-        index($0, e) { skip=0 }
-        !skip        { print }
-    ' "$AGENTS_MD" > "$tmp"
-else
-    {
-        cat "$AGENTS_MD"
-        printf '\n## Auto-invoke Skills\n\n%s\n' "$BEGIN"
-        cat "$tbl"
-        printf '%s\n' "$END"
-    } > "$tmp"
-fi
-mv "$tmp" "$AGENTS_MD"
-rm -f "$tbl"
-ok "synced auto-invoke table in AGENTS.md"
+# splice <begin> <end> <section-title> <tblfile> — replace block, or append section if absent
+splice() {
+    _b="$1"; _e="$2"; _title="$3"; _tf="$4"; _tmp="$(mktemp)"
+    if grep -qF "$_b" "$AGENTS_MD"; then
+        awk -v b="$_b" -v e="$_e" -v tblfile="$_tf" '
+            index($0, b) { print; while ((getline line < tblfile) > 0) print line; skip=1; next }
+            index($0, e) { skip=0 }
+            !skip        { print }
+        ' "$AGENTS_MD" > "$_tmp"
+    else
+        { cat "$AGENTS_MD"; printf '\n%s\n\n%s\n' "$_title" "$_b"; cat "$_tf"; printf '%s\n' "$_e"; } > "$_tmp"
+    fi
+    mv "$_tmp" "$AGENTS_MD"
+}
+
+tbl="$(mktemp)";  printf '%s\n' "$table"   > "$tbl"
+cat="$(mktemp)";  printf '%s\n' "$catalog" > "$cat"
+splice '<!-- BEGIN AUTO-INVOKE -->'   '<!-- END AUTO-INVOKE -->'   '## Auto-invoke Skills'        "$tbl"
+splice '<!-- BEGIN SKILL-CATALOG -->' '<!-- END SKILL-CATALOG -->' '## More skills you can add'   "$cat"
+rm -f "$tbl" "$cat"
+ok "synced auto-invoke + catalog tables in AGENTS.md"

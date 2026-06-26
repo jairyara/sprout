@@ -42,3 +42,13 @@
 
 <!-- anything you're unsure about — the agent will help resolve these in sdd-spec -->
 - 
+
+## Skills to use / add
+
+<!-- The capabilities available to this project are listed in AGENTS.md: the "Auto-invoke"
+table is already installed; "More skills you can add" lists installable ones from the
+catalog (or run `sprout list`). If this feature would benefit from a skill that isn't
+installed yet, NAME IT here — when you draft the spec the agent will surface the relevant
+ones and offer to add them (`sprout skills add <name>`) before building. You don't need to
+know exact names; describing the need is enough ("something for Postgres schemas"). -->
+- 
