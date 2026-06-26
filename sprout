@@ -19,7 +19,7 @@ export SPROUT_DIR
 . "$SPROUT_DIR/lib/prompt.sh"
 
 VERSION="0.1.0"
-TYPES="web fullstack desktop mobile ext"
+TYPES="web fullstack desktop mobile ext cli"
 TAB="$(printf '\t')"
 
 # defaults
@@ -47,9 +47,9 @@ sprout $VERSION — scaffold a project with your stack, skills and agent context
 Usage:
   sprout                                  interactive wizard (default)
   sprout <type> <name> [options]          non-interactive
-  sprout list | doctor | skills <cmd>
+  sprout list | doctor | skills <cmd> | sdd <cmd>
 
-Types:   web  fullstack  desktop  mobile  ext      (Phase 1 ships: web)
+Types:   web  fullstack  desktop  mobile  ext  cli  (Phase 1 ships: web)
 
 Options:
   --pm <name>             JS package manager: pnpm|npm|yarn|bun (def: pnpm if present)
@@ -59,7 +59,7 @@ Options:
   --linter <name>         web linter: none|biome|eslint (def: none)
   --test "a,b"            web testing (any/both): playwright,vitest (def: none)
   --git / --no-git        git init + first commit after scaffold (def: no)
-  --stack <name>          stack variant (e.g. fullstack: laravel|django|fastapi)
+  --stack <name>          stack variant (e.g. fullstack: laravel|django|fastapi; cli: sh|rust|go)
   --skills "a,b@1.2.0"    override the skill set; pin a skill with name@ref
   --agent  "claude gemini codex copilot opencode"   agent context to wire (def: claude)
   --clis   "gh,fzf"       install only these missing global CLIs (the wizard sets this)
@@ -71,6 +71,9 @@ Options:
 Skills subcommands (run inside a generated project, or pass a dir):
   sprout skills add <name[@ref]> [dir]    download & vendor one more skill
   sprout skills update [name] [dir]       re-resolve to latest, update lock + table
+
+SDD subcommand (spec-driven development plane — new or existing project):
+  sprout sdd init [dir]                   install the SDD kit + flow skills (def: .)
 
 Examples:
   sprout
@@ -160,6 +163,28 @@ render_agents_md() {
         -e "s/{{PROJECT_TYPE}}/$_type/g" \
         -e "s/{{PROJECT_STACK}}/$_stack/g" \
         "$SPROUT_DIR/templates/AGENTS.md.tmpl" > "$_dir/AGENTS.md"
+}
+
+# render_sdd_kit <project_dir> — install the SDD process plane (3rd plane): drop the
+# editable kit into <project>/sdd/ and the sdd-* flow skills into <project>/skills/ (so
+# sync-agents.sh lists them in the auto-invoke table). Idempotent: preserves a user-edited
+# config.yaml / spec.prompt.md, refreshes templates + the flow skills.
+render_sdd_kit() {
+    _dir="$1"
+    say "installing SDD kit (sdd/ + sdd-* flow skills)"
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+        dim "  would copy sdd/kit/* into $_dir/sdd and the sdd-* skills into $_dir/skills"
+        return 0
+    fi
+    mkdir -p "$_dir/sdd" "$_dir/skills"
+    # flow skills -> project skills/ (auto-invoke table picks them up)
+    cp -R "$SPROUT_DIR/sdd/skills/." "$_dir/skills/"
+    # kit -> project sdd/. Refresh templates + README; never clobber user-edited files.
+    cp -R "$SPROUT_DIR/sdd/kit/templates" "$_dir/sdd/" 2>/dev/null || true
+    cp "$SPROUT_DIR/sdd/kit/README.md" "$_dir/sdd/README.md" 2>/dev/null || true
+    [ -f "$_dir/sdd/config.yaml" ]    || cp "$SPROUT_DIR/sdd/kit/config.yaml"    "$_dir/sdd/config.yaml"
+    [ -f "$_dir/sdd/spec.prompt.md" ] || cp "$SPROUT_DIR/sdd/kit/spec.prompt.md" "$_dir/sdd/spec.prompt.md"
+    ok "SDD kit ready in $_dir/sdd"
 }
 
 # validate_clis <type> — check presence of core+type CLIs; warn or install missing
@@ -260,6 +285,43 @@ cmd_skills() {
     esac
 }
 
+# ── sdd: install the spec-driven-development plane into a project (new or existing) ──────
+cmd_sdd() {
+    _sub="${1:-}"; shift 2>/dev/null || true
+    case "$_sub" in
+        init)
+            _dir="${1:-$PWD}"
+            [ -d "$_dir" ] || { err "sdd init: '$_dir' is not a directory"; exit 1; }
+            head "sprout sdd — installing the SDD plane in $_dir"
+            # need an AGENTS.md to host the auto-invoke table; create a minimal one if absent
+            if [ ! -f "$_dir/AGENTS.md" ]; then
+                if [ "${DRY_RUN:-0}" = 1 ]; then dim "  would create a minimal AGENTS.md"
+                else
+                    render_agents_md "$_dir" "$(basename "$_dir")" existing "—"
+                fi
+            fi
+            render_sdd_kit "$_dir"
+            DRY_RUN="$DRY_RUN" "$SPROUT_DIR/skills/sync-agents.sh" "$_dir"
+            head "done"
+            ok  "SDD plane ready in $_dir"
+            dim "  1. edit  sdd/config.yaml   (test/lint/build commands + context)"
+            dim "  2. fill  sdd/spec.prompt.md  then ask your agent to \"draft the spec\""
+            dim "  3. flow: draft the spec → plan it → build phase 1 → verify" ;;
+        ""|-h|--help)
+            cat <<EOF
+sprout sdd — spec-driven development plane (works on a new or existing project)
+
+Usage:
+  sprout sdd init [dir]     install the SDD kit + flow skills into a project (def: .)
+
+After init: edit sdd/config.yaml, fill sdd/spec.prompt.md, then ask your agent to
+"draft the spec" → "plan it" → "build phase 1" → "verify".
+EOF
+            ;;
+        *) err "unknown sdd subcommand: '$_sub' (use init)"; exit 1 ;;
+    esac
+}
+
 # ── recipe runner ────────────────────────────────────────────────────────────
 
 run_recipe() {
@@ -313,7 +375,8 @@ wizard() {
             'fullstack|fullstack  Laravel · Django · FastAPI' \
             'desktop|desktop    Tauri · Wails · Fyne · egui' \
             'mobile|mobile     React Native · Flutter · Kotlin · Swift' \
-            'ext|ext        Chromium extension (MV3)')")"
+            'ext|ext        Chromium extension (MV3)' \
+            'cli|cli        CLI tool · posix sh · Rust · Go')")"
         [ -f "$SPROUT_DIR/recipes/$TYPE.sh" ] && break
         warn "'$TYPE' isn't ready yet — it lands in Phase 2. Pick 'web' for now."
     done
@@ -372,10 +435,11 @@ case "${1:-}" in --dry-run) DRY_RUN=1; shift ;; esac
 cmd="${1:-}"
 case "$cmd" in
     ""|wizard)                         wizard ;;
-    web|fullstack|desktop|mobile|ext)  run_recipe "$@" ;;
+    web|fullstack|desktop|mobile|ext|cli)  run_recipe "$@" ;;
     list)                              cmd_list ;;
     doctor)                            cmd_doctor ;;
     skills)                            shift; cmd_skills "$@" ;;
+    sdd)                               shift; cmd_sdd "$@" ;;
     -h|--help)                         usage ;;
     --version)                         echo "sprout $VERSION" ;;
     *)                                 err "unknown command: $cmd"; usage; exit 1 ;;

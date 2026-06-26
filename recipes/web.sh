@@ -276,6 +276,10 @@ recipe_run() {
     # shellcheck disable=SC2086
     DRY_RUN="$DRY_RUN" "$SPROUT_DIR/skills/resolve.sh" "$PROJECT_DIR" $SKILLS_SEL
 
+    # 5b ─ SDD plane (kit + flow skills) ────────────────────────────────────────
+    head "5b · SDD kit"
+    render_sdd_kit "$PROJECT_DIR"
+
     # 6 ── link agents ─────────────────────────────────────────────────────────
     head "6 · link agents"
     "$SPROUT_DIR/skills/setup.sh" "$PROJECT_DIR" "$AGENTS_SEL"

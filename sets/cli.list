@@ -1,0 +1,4 @@
+# cli.list — skills vendored into CLI-tool projects (on top of core.list).
+# Names must exist in registry.tsv. Core already covers debugging, commits, prompts,
+# brainstorming — which is most of what a CLI tool needs. Add CLI-specific skills here
+# as they land in the registry.

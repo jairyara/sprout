@@ -1,0 +1,31 @@
+# sdd/config.yaml — project-level convention for Spec-Driven Development.
+# Prompt-driven: the SDD skills (sdd-spec/plan/build/verify) READ this file; nothing in
+# sprout parses or enforces it. Edit it to match how this repo really builds and tests.
+
+# Cached project context so the agent doesn't re-derive it each phase.
+context:
+  stack: ""            # e.g. "astro · tailwind · ts"  (filled by you or on `sprout sdd init`)
+  architecture: ""     # one line: how the code is laid out
+  style: ""            # conventions worth pinning (naming, error handling, imports)
+
+# When true, every phase starts with a failing test before implementation (red→green).
+# `sdd-build` honors this. Leave false if the project has no test harness yet.
+strict_tdd: false
+
+# Commands the SDD skills run. Leave blank to disable that check.
+commands:
+  test: ""             # e.g. "pnpm vitest run"   /  "pnpm playwright test"
+  lint: ""             # e.g. "pnpm biome check"
+  build: ""            # e.g. "pnpm build"
+  typecheck: ""        # e.g. "pnpm tsc --noEmit"
+
+# Per-phase reminders the skills fold into their prompts. Keep them short and imperative.
+rules:
+  spec:   "Capture intent and acceptance criteria. No solution design yet."
+  plan:   "Slice into the SMALLEST phases that each ship a verifiable deliverable."
+  build:  "One phase at a time. Keep the diff small. Don't start the next phase."
+  verify: "Run the commands above, then check each acceptance criterion explicitly."
+
+# Single-agent by default. Subagent delegation is intentionally OFF (see AGENTS.md).
+orchestration:
+  delegate: false
