@@ -107,22 +107,25 @@ skill_items_for_type() {
 # clis_for_type <type> — "name|name (installed|missing) — <desc>" lines for the picker
 clis_for_type() {
     _t="$1"
-    while IFS="$TAB" read -r name brew pac phase types desc; do
+    while IFS="$TAB" read -r name brew pac apt dnf zyp phase types desc; do
         case "$name" in ''|\#*|name) continue ;; esac
         echo "$types" | tr ',' '\n' | grep -qx core 2>/dev/null \
             || echo "$types" | tr ',' '\n' | grep -qx "$_t" 2>/dev/null || continue
         _tag="(missing)"; have "$name" && _tag="(installed)"
-        printf '%s|%-9s %-11s — %s\n' "$name" "$name" "$_tag" "$desc"
+        [ "$_tag" = "(missing)" ] && echo "$types" | tr ',' '\n' | grep -qx optional 2>/dev/null && _tag="(optional)"
+        printf '%s|%-13s %-11s — %s\n' "$name" "$name" "$_tag" "$desc"
     done < "$SPROUT_DIR/clis/manifest.tsv"
 }
 
-# clis_missing <type> — space-separated names of core+type CLIs not on PATH
+# clis_missing <type> — space-separated names of core+type CLIs not on PATH.
+# Optional CLIs are never preselected (you opt in via the picker).
 clis_missing() {
     _t="$1"; _out=""
-    while IFS="$TAB" read -r name brew pac phase types desc; do
+    while IFS="$TAB" read -r name brew pac apt dnf zyp phase types desc; do
         case "$name" in ''|\#*|name) continue ;; esac
         echo "$types" | tr ',' '\n' | grep -qx core 2>/dev/null \
             || echo "$types" | tr ',' '\n' | grep -qx "$_t" 2>/dev/null || continue
+        echo "$types" | tr ',' '\n' | grep -qx optional 2>/dev/null && continue
         have "$name" || _out="$_out $name"
     done < "$SPROUT_DIR/clis/manifest.tsv"
     printf '%s' "$_out" | sed 's/^ *//'
@@ -191,21 +194,27 @@ render_sdd_kit() {
 validate_clis() {
     _type="$1"; _missing=0
     head "CLIs (global)"
-    while IFS="$TAB" read -r name brew pac phase types desc; do
+    while IFS="$TAB" read -r name brew pac apt dnf zyp phase types desc; do
         case "$name" in ''|\#*|name) continue ;; esac
         # applies if types contains "core" or the project type
         echo "$types" | tr ',' '\n' | grep -qx core 2>/dev/null \
             || echo "$types" | tr ',' '\n' | grep -qx "$_type" 2>/dev/null || continue
         if have "$name"; then
             ok "present: $name"
+            continue
+        fi
+        # already installed under a distro-renamed binary (fd-find→fdfind)? link, don't reinstall.
+        if link_alias "$name"; then continue; fi
+        _opt=0; echo "$types" | tr ',' '\n' | grep -qx optional 2>/dev/null && _opt=1
+        if [ "$INSTALL_CLIS" = 1 ] || in_list "$name" "${CLIS_INSTALL:-}"; then
+            say "installing $name"
+            pkg_install "$brew" "$pac" "$apt" "$dnf" "$zyp"
+            link_alias "$name"   # make it usable under the expected command name
+        elif [ "$_opt" = 1 ]; then
+            dim "  optional: $name not installed — $desc"
         else
             _missing=1
-            if [ "$INSTALL_CLIS" = 1 ] || in_list "$name" "${CLIS_INSTALL:-}"; then
-                say "installing $name"
-                pkg_install "$brew" "$pac"
-            else
-                warn "missing: $name  (install with brew '$brew' / pacman '$pac', or rerun with --install-clis)"
-            fi
+            warn "missing: $name  (pkg: brew '$brew' / pacman '$pac' / apt '$apt' / dnf '$dnf' / zypper '$zyp', or rerun with --install-clis)"
         fi
     done < "$SPROUT_DIR/clis/manifest.tsv"
     [ "$_missing" = 0 ] && ok "all required CLIs present"
@@ -227,7 +236,7 @@ cmd_list() {
     head "Skills (registry)"
     awk -F "$TAB" '/^[[:space:]]*#/||$1=="name"{next} NF>=5 {printf "  %-28s %s\n", $1, $5}' "$SPROUT_DIR/skills/registry.tsv"
     head "CLIs (manifest)"
-    awk -F "$TAB" '/^[[:space:]]*#/||$1=="name"{next} NF>=6 {printf "  %-10s %s\n", $1, $6}' "$SPROUT_DIR/clis/manifest.tsv"
+    awk -F "$TAB" '/^[[:space:]]*#/||$1=="name"{next} NF>=9 {printf "  %-14s %s\n", $1, $9}' "$SPROUT_DIR/clis/manifest.tsv"
 }
 
 cmd_doctor() {

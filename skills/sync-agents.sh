@@ -77,9 +77,40 @@ fi
 [ "$catfound" = 1 ] || catalog="$catalog
 | (all catalog skills are installed) | — | — |"
 
+# ── 3 · tooling table (manifest core CLIs the agent should prefer) ──────────────
+# Replacement-class CLIs get a "use X instead of Y" directive; the rest are listed as
+# additive tools. Interactive TUIs (fzf/lazygit) are for humans, not agents — skipped.
+MANIFEST="$SPROUT_DIR/clis/manifest.tsv"
+tooling="| Use   | Instead of | For                                |
+|-------|------------|------------------------------------|"
+extras=""; toolfound=0
+if [ -f "$MANIFEST" ]; then
+    while IFS="$TAB" read -r cname cbrew cpac capt cdnf czyp cphase ctypes cdesc; do
+        case "$cname" in ''|\#*|name) continue ;; esac
+        echo "$ctypes" | tr ',' '\n' | grep -qx core 2>/dev/null || continue
+        case "$cname" in
+            rg)          inst="grep / recursive grep" ;;
+            fd)          inst="find" ;;
+            bat)         inst="cat" ;;
+            delta)       inst="plain git diff" ;;
+            fzf|lazygit) continue ;;                       # interactive TUIs — not for agents
+            *)           extras="$extras, \`$cname\`"; continue ;;
+        esac
+        tooling="$tooling
+| \`$cname\` | $inst | $cdesc |"
+        toolfound=1
+    done < "$MANIFEST"
+fi
+[ "$toolfound" = 1 ] || tooling="$tooling
+| (no preferred CLIs configured) | — | — |"
+[ -n "$extras" ] && tooling="$tooling
+
+Also on PATH when relevant (additive — use when the task calls for it): ${extras#, }."
+
 if [ "${DRY_RUN:-0}" = 1 ]; then
     head "AGENTS.md auto-invoke table (dry-run)";  printf '%s\n' "$table"
     head "AGENTS.md skill catalog (dry-run)";      printf '%s\n' "$catalog"
+    head "AGENTS.md tooling table (dry-run)";       printf '%s\n' "$tooling"
     exit 0
 fi
 
@@ -100,7 +131,9 @@ splice() {
 
 tbl="$(mktemp)";  printf '%s\n' "$table"   > "$tbl"
 cat="$(mktemp)";  printf '%s\n' "$catalog" > "$cat"
+too="$(mktemp)";  printf '%s\n' "$tooling" > "$too"
+splice '<!-- BEGIN TOOLING -->'       '<!-- END TOOLING -->'       '## Tooling — prefer these CLIs over the defaults' "$too"
 splice '<!-- BEGIN AUTO-INVOKE -->'   '<!-- END AUTO-INVOKE -->'   '## Auto-invoke Skills'        "$tbl"
 splice '<!-- BEGIN SKILL-CATALOG -->' '<!-- END SKILL-CATALOG -->' '## More skills you can add'   "$cat"
-rm -f "$tbl" "$cat"
-ok "synced auto-invoke + catalog tables in AGENTS.md"
+rm -f "$tbl" "$cat" "$too"
+ok "synced tooling + auto-invoke + catalog tables in AGENTS.md"

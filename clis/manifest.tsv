@@ -1,23 +1,32 @@
-# manifest.tsv — Plane 1: GLOBAL system CLIs only (installed via brew/pacman, never
-# vendored). sprout validates presence and, with --install-clis or the wizard's CLI
-# picker, installs the missing ones. TAB-separated.
-# Columns:  name  brew_pkg  pacman_pkg  phase  types(comma-sep; "core"=every project)  desc
+# manifest.tsv — Plane 1: GLOBAL system CLIs only (installed via the system package
+# manager, never vendored). sprout validates presence and, with --install-clis or the
+# wizard's CLI picker, installs the missing ones. TAB-separated.
+# Columns:  name  brew_pkg  pacman_pkg  apt_pkg  dnf_pkg  zypper_pkg  phase  types  desc
+#   managers: brew(macOS) pacman(Arch) apt(Debian·Ubuntu) dnf(Fedora) zypper(openSUSE)
+#   types:  "core"=every project; a project type (web/fullstack/…); "optional"=validated
+#           but never auto-installed/preselected (only installed if you pick it).
+#   pkg:    a `-` means "not packaged for that manager" → sprout prints a manual hint.
+#           an `npm:<pkg>` spec installs via `npm install -g <pkg>` on any OS.
 #
-# NOTE: project-level dev tools (playwright, biome, eslint, …) do NOT belong here —
-# they are installed per project by the chosen JS package manager (pnpm/npm/yarn/bun),
-# not globally. The web recipe handles those. See cli.md for the full breakdown.
-name	brew_pkg	pacman_pkg	phase	types	desc
-rg	ripgrep	ripgrep	scaffold	core	fast code/text search (grep, but instant)
-fd	fd	fd	scaffold	core	fast file finder (friendlier `find`)
-fzf	fzf	fzf	scaffold	core	fuzzy picker for the terminal (filter anything)
-bat	bat	bat	scaffold	core	`cat` with syntax colors + line numbers
-jq	jq	jq	build	core	read & transform JSON from the command line
-yq	yq	yq	build	core	same as jq, but for YAML
-gh	gh	github-cli	ship	core	GitHub from the terminal (PRs, issues, releases)
-delta	git-delta	git-delta	review	core	pretty, readable `git diff`
-lazygit	lazygit	lazygit	ship	core	visual git UI in the terminal (stage, commit, branch)
-just	just	just	build	core	task runner — save commands in a justfile
-gitleaks	gitleaks	gitleaks	review	core	scan the repo for leaked secrets/keys
-uv	uv	uv	build	fullstack	fast Python package & virtualenv manager
-psql	libpq	postgresql	build	fullstack	PostgreSQL client — query your database
-git-cliff	git-cliff	git-cliff	ship	fullstack	generate changelogs from git history
+# NOTE: project-level dev tools (@playwright/test, biome, eslint, …) do NOT belong here —
+# they are installed per project by the chosen JS package manager (pnpm/npm/yarn/bun).
+# The GLOBAL @playwright/cli (binary `playwright-cli`, for coding agents) is different and
+# DOES live on PATH, so it is listed below as optional. See cli.md for the full breakdown.
+# Debian/Ubuntu wart: `fd` ships as `fd-find` (binary `fdfind`) and `bat` as `batcat`;
+# sprout symlinks them to fd/bat in ~/.local/bin so the expected command actually works.
+name	brew_pkg	pacman_pkg	apt_pkg	dnf_pkg	zypper_pkg	phase	types	desc
+rg	ripgrep	ripgrep	ripgrep	ripgrep	ripgrep	scaffold	core	fast code/text search (grep, but instant)
+fd	fd	fd	fd-find	fd-find	fd	scaffold	core	fast file finder (friendlier `find`)
+fzf	fzf	fzf	fzf	fzf	fzf	scaffold	core	fuzzy picker for the terminal (filter anything)
+bat	bat	bat	bat	bat	bat	scaffold	core	`cat` with syntax colors + line numbers
+jq	jq	jq	jq	jq	jq	build	core	read & transform JSON from the command line
+yq	yq	yq	-	-	-	build	core	same as jq, but for YAML
+gh	gh	github-cli	gh	gh	gh	ship	core	GitHub from the terminal (PRs, issues, releases)
+delta	git-delta	git-delta	-	git-delta	git-delta	review	core	pretty, readable `git diff`
+lazygit	lazygit	lazygit	-	-	-	ship	core	visual git UI in the terminal (stage, commit, branch)
+just	just	just	-	just	just	build	core	task runner — save commands in a justfile
+gitleaks	gitleaks	gitleaks	-	-	-	review	core	scan the repo for leaked secrets/keys
+uv	uv	uv	-	-	-	build	fullstack	fast Python package & virtualenv manager
+psql	libpq	postgresql	postgresql-client	postgresql	postgresql	build	fullstack	PostgreSQL client — query your database
+git-cliff	git-cliff	git-cliff	-	-	-	ship	fullstack	generate changelogs from git history
+playwright-cli	npm:@playwright/cli	npm:@playwright/cli	npm:@playwright/cli	npm:@playwright/cli	npm:@playwright/cli	review	core,optional	global Playwright CLI for coding agents (browser debug); npm i -g @playwright/cli

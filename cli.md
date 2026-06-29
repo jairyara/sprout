@@ -14,8 +14,13 @@ and **project-level dev tools** (installed per project by your package manager).
 
 ## Plane 1 · Global system CLIs (`clis/manifest.tsv`)
 
-Installed via `brew` (macOS) / `pacman` (Arch). sprout checks presence and offers to
-install the missing ones. These are the **core** set — every project gets them.
+Installed via `brew` (macOS) / `pacman` (Arch) / `apt` (Debian·Ubuntu) / `dnf` (Fedora) /
+`zypper` (openSUSE). sprout checks presence and offers to install the missing ones. These
+are the **core** set — every project gets them. A `-` in the manifest means that tool
+isn't packaged for that manager (sprout prints a manual-install hint instead). On
+Debian/Ubuntu, `fd` installs as `fd-find` (binary `fdfind`) and `bat` as `batcat`;
+sprout symlinks them to `fd`/`bat` in `~/.local/bin` so the normal command works — an
+installed tool you can't invoke is useless.
 
 | CLI | Phase | What it is / does | Typical use |
 |---|---|---|---|
@@ -30,6 +35,7 @@ install the missing ones. These are the **core** set — every project gets them
 | **lazygit** | ship | Full-screen terminal UI for git: stage, commit, branch, rebase visually. | Run `lazygit` in a repo. |
 | **just** | build | Command runner (a saner `make`): define recipes in a `justfile`. | `just build`, `just test`. |
 | **gitleaks** | review | Scans the repo/history for hardcoded secrets (keys, tokens). | `gitleaks detect` before pushing. |
+| **playwright-cli** _(optional)_ | review | The **global** `@playwright/cli` (binary `playwright-cli`) — token-efficient browser automation built for coding agents. A real global binary on `PATH`, unlike `@playwright/test` below. Validated but never auto-installed. | `npm i -g @playwright/cli` → `playwright-cli` (then drive a browser to debug). Pick it in the wizard's CLI step to have sprout install it. |
 
 **Install all missing at once:** `sprout web my-site --install-clis`
 **Pick which to install:** run the wizard (`sprout`) → CLI step → space to toggle.
@@ -65,6 +71,10 @@ These belong in each project's `devDependencies`, pinned and reproducible. You r
 them through your package manager, never as a bare global command. This is why
 `command -v playwright` finds nothing even when you "have" it — it lives inside a
 project's `node_modules`, invoked via `pnpm exec playwright` / `npx playwright`.
+
+> Don't confuse `@playwright/test` (below, project-level, binary `playwright`) with the
+> global `@playwright/cli` (Plane 1, binary `playwright-cli`). The latter is a standalone
+> agent-oriented CLI that genuinely lives on `PATH`; the former is your e2e test harness.
 
 | Tool | What it is / does | How to add & run (pnpm example) |
 |---|---|---|

@@ -17,7 +17,7 @@ conventional-commits	git:https://github.com/github/awesome-copilot#skills/conven
 prompt-engineering	skillsh:https://github.com/wshobson/agents#prompt-engineering-patterns	latest	core	writing prompts for an agent or model
 frontend-design	git:https://github.com/anthropics/skills#skills/frontend-design	main	web	creating or editing UI components
 webapp-testing	git:https://github.com/anthropics/skills#skills/webapp-testing	main	web	writing or running browser / e2e tests	playwright (project)
-interface-design	skillsh:https://github.com/dammyjay93/interface-design#interface-design	latest	web	designing screens, layout or interaction
+interface-design	skillsh:https://github.com/dammyjay93/interface-design#interface-design	latest	web,fullstack	designing screens, layout or interaction
 impeccable	git:https://github.com/pbakaus/impeccable#skill	main	web	polishing visual design, styles, spacing
 vercel-react-best-practices	skillsh:https://github.com/vercel-labs/agent-skills#vercel-react-best-practices	latest	web	writing React in a Next.js/Vercel app
 accessibility	skillsh:https://github.com/addyosmani/web-quality-skills#accessibility	latest	web	checking a11y, semantics or ARIA

@@ -3,7 +3,7 @@
 #   1. symlinks the `sprout` command into a bin dir on your PATH (~/.local/bin)
 #   2. persists that dir in your shell rc (idempotent, marker-fenced) so the
 #      command survives a new terminal
-#   3. installs the missing core CLIs (Plane 1) via brew/pacman
+#   3. installs the missing core CLIs (Plane 1) via brew/pacman/apt
 #   4. verifies the result
 # POSIX sh, no bashisms. Honors --dry-run.
 set -e
@@ -106,13 +106,15 @@ esac
 if [ "$INSTALL_CLIS" = 1 ]; then
     head "core CLIs (global)"
     if [ "$(detect_pm)" = none ]; then
-        warn "no brew/pacman found — skipping CLI install (see README for manual steps)"
+        warn "no brew/pacman/apt/dnf/zypper found — skipping CLI install (see README for manual steps)"
     else
-        while IFS="$TAB" read -r name brew pac phase types desc; do
+        while IFS="$TAB" read -r name brew pac apt dnf zyp phase types desc; do
             case "$name" in ''|\#*|name) continue ;; esac
             echo "$types" | tr ',' '\n' | grep -qx core 2>/dev/null || continue
+            echo "$types" | tr ',' '\n' | grep -qx optional 2>/dev/null && continue
             if have "$name"; then ok "present: $name"
-            else say "installing $name"; pkg_install "$brew" "$pac"; fi
+            elif link_alias "$name"; then :   # installed under a distro-renamed binary; linked
+            else say "installing $name"; pkg_install "$brew" "$pac" "$apt" "$dnf" "$zyp"; link_alias "$name"; fi
         done < "$SPROUT_DIR/clis/manifest.tsv"
     fi
 else

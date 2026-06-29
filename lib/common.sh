@@ -34,21 +34,68 @@ in_project() {
 # in_list <needle> <space-separated haystack> -> 0 if present, 1 otherwise
 in_list() { case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
-# ── package manager detection (macOS / Arch) ─────────────────────────────────
+# ── package manager detection (macOS / Arch / Debian / Fedora / openSUSE) ────
 detect_pm() {
-    if   have brew;   then echo brew
-    elif have pacman; then echo pacman
+    if   have brew;    then echo brew
+    elif have pacman;  then echo pacman
+    elif have apt-get; then echo apt
+    elif have dnf;     then echo dnf
+    elif have zypper;  then echo zypper
     else echo none; fi
 }
 
-# Install a package by its manager-specific name. Args: brew_name pacman_name
+# Install a package by its manager-specific name.
+# Args: brew_name pacman_name apt_name dnf_name zypper_name
+# A `-` (or empty) name means "not packaged for this manager" → manual-install hint.
+# Cross-manager npm-global CLIs use an `npm:<pkg>` spec in all columns; they install
+# via `npm install -g <pkg>` regardless of the system package manager.
 pkg_install() {
+    case "$1" in
+        npm:*)
+            if have npm; then run npm install -g "${1#npm:}"
+            else warn "npm not found — install Node.js, then: npm install -g ${1#npm:}"; fi
+            return ;;
+    esac
     _pm="$(detect_pm)"
     case "$_pm" in
-        brew)   run brew install "$1" ;;
-        pacman) run sudo pacman -S --needed --noconfirm "$2" ;;
-        none)   warn "no supported package manager (brew/pacman); install '$1' manually" ;;
+        brew)   _p="$1" ;;
+        pacman) _p="$2" ;;
+        apt)    _p="$3" ;;
+        dnf)    _p="$4" ;;
+        zypper) _p="$5" ;;
+        none)   warn "no supported package manager (brew/pacman/apt/dnf/zypper); install '$1' manually"; return ;;
     esac
+    case "$_p" in
+        ''|-) warn "'$1' has no $_pm package — install it manually" ;;
+        *)
+            case "$_pm" in
+                brew)   run brew install "$_p" ;;
+                pacman) run sudo pacman -S --needed --noconfirm "$_p" ;;
+                apt)    run sudo apt-get install -y "$_p" ;;
+                dnf)    run sudo dnf install -y "$_p" ;;
+                zypper) run sudo zypper install -y "$_p" ;;
+            esac ;;
+    esac
+}
+
+# link_alias <cmd> — some distros ship a tool under a different binary name (Debian:
+# fd→fdfind, bat→batcat), so it's installed but not usable under the expected command.
+# Symlink the real binary to <cmd> in ~/.local/bin so the normal name works.
+# Returns 0 only if it actually linked (or would, in dry-run); 1 when there's nothing to do.
+link_alias() {
+    case "$1" in
+        fd)  _alt=fdfind ;;
+        bat) _alt=batcat ;;
+        *)   return 1 ;;
+    esac
+    have "$_alt" || return 1
+    _bin="${BIN_DIR:-$HOME/.local/bin}"
+    if [ "${DRY_RUN:-0}" = 1 ]; then dim "  would link $1 -> $_alt in $_bin"; return 0; fi
+    mkdir -p "$_bin"
+    ln -sf "$(command -v "$_alt")" "$_bin/$1" || return 1
+    ok "linked $1 -> $_alt ($_bin/$1)"
+    case ":$PATH:" in *":$_bin:"*) ;; *) warn "$_bin not on PATH — add it so '$1' works in new shells" ;; esac
+    return 0
 }
 
 # ── JS package manager (pnpm/npm/yarn/bun) abstraction ───────────────────────
