@@ -3,9 +3,9 @@
 > Nombre del proyecto: **sprout** (comando `sprout`, repo `github.com/jairyara/sprout`).
 > Hermano de `divvy` en la suite de dev-tools. Carpeta de trabajo: `~/projects/me/sprout`.
 >
-> Estado: **Fases 1, 2 y 3 COMPLETADAS** ✅. Sin IA en el scaffolding. Siguiente:
-> **Fase 4** (orquestadores/subagentes — futuro). Ver §12 para el detalle de lo
-> construido y lo pendiente.
+> Estado: **Fases 1–4 COMPLETADAS** ✅ (Fase 4 = plano SDD, opt-in y sin IA en el
+> scaffolding). Siguiente: **Fase 5** (orquestadores/subagentes — futuro). Ver §12 para el
+> detalle de lo construido y lo pendiente.
 
 ---
 
@@ -333,7 +333,8 @@ mi-sitio/                       (ejemplo: web Astro+Tailwind)
   Fase 1  ██████████  ✅ HECHA — Motor + vertical web + subsistema de skills
   Fase 2  ██████████  ✅ HECHA — Recetas restantes (fullstack, desktop, mobile, ext)
   Fase 3  ██████████  ✅ HECHA — install.sh + sprout doctor + skills update + README
-  Fase 4  ░░░░░░░░░░  ← SIGUIENTE (futuro) Orquestadores / subagentes  (ref: prowler-studio)
+  Fase 4  ██████████  ✅ HECHA — Plano SDD (kit + flujo spec→plan→build→verify, opt-in)
+  Fase 5  ░░░░░░░░░░  ← SIGUIENTE (futuro) Orquestadores / subagentes  (ref: prowler-studio)
 ```
 
 ### Fase 1 — entregado
@@ -378,6 +379,21 @@ mi-sitio/                       (ejemplo: web Astro+Tailwind)
   instalación asistida y manual muy explícitas, manejo de PATH rc, comandos, tipos, layout
   generado y desinstalación.
 
+### Fase 4 — entregado (Plano SDD: opt-in, sin IA, flujo markdown vendorizado)
+- **`sprout sdd init [dir]`**: instala el kit editable en `<proj>/sdd/` (`config.yaml`,
+  `spec.prompt.md`, `templates/`, `README.md`) + las skills de flujo `sdd-spec/plan/build/
+  verify` en `<proj>/skills/`, y sincroniza la tabla auto-invoke en `AGENTS.md`. Crea un
+  `AGENTS.md` mínimo si falta. Nunca pisa `config.yaml`/`spec.prompt.md` ya editados.
+- **`sprout sdd spec new <feature> [dir]`**: scaffoldea un brief por-feature en
+  `sdd/specs/<feature>/brief.md` (copia mecánica del template — sin IA). Valida kebab-case,
+  exige `sdd/` (si no, manda a `sprout sdd init`), no sobrescribe un `brief.md` existente,
+  honra `--dry-run`. `sdd-spec` prefiere ese brief y deriva `<feature>` del nombre de la
+  carpeta; cae al `spec.prompt.md` global si no hay brief por-feature.
+- **Flujo**: `spec new` → llenar brief → "draft the spec" (`sdd-spec`) → "plan it"
+  (`sdd-plan`) → "build phase 1" (`sdd-build`) → "verify" (`sdd-verify`), una fase a la vez.
+  Single-agent por defecto (sin fan-out); todo es markdown/yaml que las skills LEEN —
+  nada en sprout parsea ni impone el kit.
+
 ### Pendientes / deuda técnica (para retomar)
 - **Real-test** aún no hecho de: django/fastapi (instalar `uv`), desktop (tauri/wails/
   fyne/egui), mobile (expo/flutter). Solo dry-run verificado.
@@ -395,7 +411,7 @@ mi-sitio/                       (ejemplo: web Astro+Tailwind)
 
 - **MCP** (incluido Context7) — parqueado hasta que lo quieras.
 - IA en el scaffolding.
-- Orquestadores (Fase 4).
+- Orquestadores / subagentes (Fase 5).
 
 ---
 
@@ -403,7 +419,7 @@ mi-sitio/                       (ejemplo: web Astro+Tailwind)
 
 - prowler — gestión de skills/agentes: https://github.com/prowler-cloud/prowler/tree/master/skills
 - prowler — AGENTS.md: https://github.com/prowler-cloud/prowler/blob/master/AGENTS.md
-- prowler-studio (orquestación, ref. Fase 4): https://github.com/prowler-cloud/prowler-studio
+- prowler-studio (orquestación, ref. Fase 5): https://github.com/prowler-cloud/prowler-studio
 - Playwright CLI: https://github.com/microsoft/playwright-cli
 - Playwright CLI vs MCP (tokens): https://testdino.com/blog/playwright-cli-vs-mcp
 - divvy (proyecto base de estilo): ../divvy

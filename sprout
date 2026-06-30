@@ -75,8 +75,9 @@ Skills subcommands (run inside a generated project, or pass a dir):
   sprout skills add <name[@ref]> [dir]    download & vendor one more skill
   sprout skills update [name] [dir]       re-resolve to latest, update lock + table
 
-SDD subcommand (spec-driven development plane — new or existing project):
+SDD subcommands (spec-driven development plane — new or existing project):
   sprout sdd init [dir]                   install the SDD kit + flow skills (def: .)
+  sprout sdd spec new <feature> [dir]     scaffold a per-feature brief (sdd/specs/<feature>/brief.md)
 
 Examples:
   sprout
@@ -317,20 +318,57 @@ cmd_sdd() {
             head "done"
             ok  "SDD plane ready in $_dir"
             dim "  1. edit  sdd/config.yaml   (test/lint/build commands + context)"
-            dim "  2. fill  sdd/spec.prompt.md  then ask your agent to \"draft the spec\""
+            dim "  2. new feature: sprout sdd spec new <feature>  then fill its brief.md"
             dim "  3. flow: draft the spec → plan it → build phase 1 → verify" ;;
+        spec)
+            _spec_cmd="${1:-}"; shift 2>/dev/null || true
+            case "$_spec_cmd" in
+                new)
+                    _feat="${1:-}"; _dir="${2:-$PWD}"
+                    [ -n "$_feat" ] || { err "sdd spec new: missing <feature> name"; exit 1; }
+                    case "$_feat" in
+                        -*|*-|*[!a-z0-9-]*) err "sdd spec new: '$_feat' must be kebab-case (a-z, 0-9, -)"; exit 1 ;;
+                    esac
+                    [ -d "$_dir/sdd" ] || { err "sdd spec new: no sdd/ in '$_dir' — run 'sprout sdd init' first"; exit 1; }
+                    _src="$_dir/sdd/spec.prompt.md"; [ -f "$_src" ] || _src="$SPROUT_DIR/sdd/kit/spec.prompt.md"
+                    _dest_dir="$_dir/sdd/specs/$_feat"; _dest="$_dest_dir/brief.md"
+                    [ -f "$_dest" ] && { err "sdd spec new: '$_dest' already exists — not overwriting"; exit 1; }
+                    head "sprout sdd spec — new brief for '$_feat'"
+                    if [ "${DRY_RUN:-0}" = 1 ]; then
+                        dim "  would create $_dest_dir/ and copy the brief template → $_dest"
+                    else
+                        mkdir -p "$_dest_dir"
+                        cp "$_src" "$_dest"
+                        ok "brief ready: $_dest"
+                        dim "  1. fill  sdd/specs/$_feat/brief.md  (goal, users, acceptance criteria)"
+                        dim "  2. ask your agent to \"draft the spec for $_feat\"  → writes spec.md alongside it"
+                    fi ;;
+                ""|-h|--help)
+                    cat <<EOF
+sprout sdd spec — scaffold a per-feature spec brief
+
+Usage:
+  sprout sdd spec new <feature> [dir]   create sdd/specs/<feature>/brief.md from the template
+
+<feature> is a kebab-case id (e.g. user-invite-flow). Fill the brief, then ask your agent
+to "draft the spec" — sdd-spec turns it into sdd/specs/<feature>/spec.md.
+EOF
+                    ;;
+                *) err "unknown sdd spec subcommand: '$_spec_cmd' (use new)"; exit 1 ;;
+            esac ;;
         ""|-h|--help)
             cat <<EOF
 sprout sdd — spec-driven development plane (works on a new or existing project)
 
 Usage:
-  sprout sdd init [dir]     install the SDD kit + flow skills into a project (def: .)
+  sprout sdd init [dir]                 install the SDD kit + flow skills into a project (def: .)
+  sprout sdd spec new <feature> [dir]   scaffold a per-feature brief at sdd/specs/<feature>/brief.md
 
-After init: edit sdd/config.yaml, fill sdd/spec.prompt.md, then ask your agent to
-"draft the spec" → "plan it" → "build phase 1" → "verify".
+After init: edit sdd/config.yaml. Per feature, run 'sprout sdd spec new <feature>', fill its
+brief.md, then ask your agent to "draft the spec" → "plan it" → "build phase 1" → "verify".
 EOF
             ;;
-        *) err "unknown sdd subcommand: '$_sub' (use init)"; exit 1 ;;
+        *) err "unknown sdd subcommand: '$_sub' (use init|spec)"; exit 1 ;;
     esac
 }
 
