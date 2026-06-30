@@ -23,16 +23,35 @@ fallback if you'd rather keep a single global brief instead of one per feature).
 The agent reaches for each skill automatically via the **Auto-invoke Skills** table in
 `AGENTS.md` — you just describe what you want ("draft the spec", "build the next phase").
 
+## Multi-agent (opt-in): waves
+
+Single-agent is the default. The agent roster is **yours to choose** — list one, two, or as
+many agents as you like in `config.yaml` `orchestration.agents` under any names (sprout never
+invokes them; dispatch is manual). To split a feature across agents (e.g. `claude` plans +
+reviews, `gemini` does frontend, `minimax` does backend — but use whatever set fits), assign
+each phase an **Agent** and **Depends on** in `plan.md` (sdd-plan fills these), fill the
+spec's **Contract**, then:
+
+```
+sprout sdd waves <feature>            ← shows the execution waves: what runs in parallel ║, what waits
+sprout sdd handoff <feature> <phase>  ← writes specs/<feature>/handoffs/phase-<n>.md (self-contained brief)
+"orchestrate <feature>"  → sdd-orchestrate   ← runs the wave loop: brief → dispatch → review per phase
+```
+
+The rule: freeze the **Contract** before any parallel wave; phases in a wave run in parallel
+only if independent at the file level. Dispatch is manual — you open each agent and paste its
+brief. Review (`sdd-verify`) stays single-brain (claude).
+
 ## Files
 
 ```
 sdd/
-├── config.yaml          ← stack context, test/lint/build commands, strict_tdd, rules
+├── config.yaml          ← context, commands, strict_tdd, rules, orchestration (agents roster)
 ├── spec.prompt.md       ← brief template (source for `sprout sdd spec new`; or a global brief)
 ├── templates/
-│   ├── spec.md          ← shape of a spec
-│   └── plan.md          ← shape of a phased plan
-└── specs/<feature>/     ← created per feature: brief.md + spec.md + plan.md live here
+│   ├── spec.md          ← shape of a spec (incl. Contract for front/back boundaries)
+│   └── plan.md          ← shape of a phased plan (each phase: Agent + Depends on)
+└── specs/<feature>/     ← per feature: brief.md + spec.md + plan.md + handoffs/phase-<n>.md
 ```
 
 ## First time

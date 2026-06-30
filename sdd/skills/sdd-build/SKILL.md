@@ -27,6 +27,8 @@ NOT delegate to subagents (this project runs single-agent by default).
 ## Rules
 
 - One phase only. Do **not** start the next phase — stop and hand back to the user.
+- If you're acting on a handoff brief (`sdd/specs/<feature>/handoffs/phase-<n>.md`) from a
+  multi-agent run, build strictly against its **Contract** — don't invent shapes/endpoints.
 - Honor `rules.build` in `config.yaml`. Don't expand scope beyond the phase's tasks.
 - If you hit something the spec didn't anticipate, stop and ask rather than guessing; if it
   changes the spec, note it and suggest re-running `sdd-spec`/`sdd-plan`.

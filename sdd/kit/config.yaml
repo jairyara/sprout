@@ -25,7 +25,20 @@ rules:
   plan:   "Slice into the SMALLEST phases that each ship a verifiable deliverable."
   build:  "One phase at a time. Keep the diff small. Don't start the next phase."
   verify: "Run the commands above, then check each acceptance criterion explicitly."
+  orchestrate: "Freeze the Contract before any parallel wave. Dispatch one brief per agent; review each phase against its ACs."
 
-# Single-agent by default. Subagent delegation is intentionally OFF (see AGENTS.md).
+# Single-agent by default (delegate: false). Multi-agent (Phase 5) is OPT-IN: assign phases
+# to different agents via plan.md `Agent:`, then `sprout sdd waves` (what runs in parallel)
+# and `sprout sdd handoff` (self-contained brief per phase). `sdd-orchestrate` drives it.
 orchestration:
   delegate: false
+  # AGNOSTIC roster: the agent labels this project routes phases to (what you write in
+  # plan.md `Agent:`). Free-form — use ONE (pure single-agent), or two, or as many as you
+  # like; add/remove to taste. The names are yours; sprout doesn't care which they are and
+  # never invokes them (dispatch is manual). Recommendation, not a rule: keep ONE agent as
+  # the planner + reviewer so quality stays consistent. Examples below — replace with yours:
+  agents:
+    - claude      # e.g. plans + reviews (recommended: one reviewer brain)
+    - gemini      # e.g. a second coder
+    - minimax     # e.g. a third coder (via opencode)
+  #  ↑ delete the ones you don't use; a single-entry list is perfectly valid.

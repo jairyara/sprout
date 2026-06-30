@@ -29,6 +29,17 @@
 
 - 
 
+## Contract
+
+<!-- The interface at any front/back or service boundary: data shapes + API. Fill this ONLY
+if the feature crosses such a boundary. It's the source of truth two agents build against in
+parallel (see the orchestration "waves" flow) — freeze it before fanning work out, or the
+sides diverge and integration breaks. Interface only, not implementation. Leave as "N/A" for
+a single-surface feature. -->
+
+- **Data shapes:** <!-- e.g. User { id: string; email: string; invitedAt: ISO8601 } -->
+- **API / endpoints:** <!-- e.g. POST /invites {email} -> 201 {inviteId} | 409 {error} -->
+
 ## Resolved questions
 
 <!-- decisions made while drafting (was an open question → now answered) -->

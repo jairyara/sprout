@@ -3,9 +3,9 @@
 > Nombre del proyecto: **sprout** (comando `sprout`, repo `github.com/jairyara/sprout`).
 > Hermano de `divvy` en la suite de dev-tools. Carpeta de trabajo: `~/projects/me/sprout`.
 >
-> Estado: **Fases 1–4 COMPLETADAS** ✅ (Fase 4 = plano SDD, opt-in y sin IA en el
-> scaffolding). Siguiente: **Fase 5** (orquestadores/subagentes — futuro). Ver §12 para el
-> detalle de lo construido y lo pendiente.
+> Estado: **Fases 1–5 COMPLETADAS** ✅ (Fase 4 = plano SDD; Fase 5 = orquestación
+> multi-agente por ondas, opt-in y con dispatch manual; sin IA en el scaffolding). Ver §12
+> para el detalle de lo construido y §13 para el diseño de la orquestación.
 
 ---
 
@@ -334,7 +334,7 @@ mi-sitio/                       (ejemplo: web Astro+Tailwind)
   Fase 2  ██████████  ✅ HECHA — Recetas restantes (fullstack, desktop, mobile, ext)
   Fase 3  ██████████  ✅ HECHA — install.sh + sprout doctor + skills update + README
   Fase 4  ██████████  ✅ HECHA — Plano SDD (kit + flujo spec→plan→build→verify, opt-in)
-  Fase 5  ░░░░░░░░░░  ← SIGUIENTE (futuro) Orquestadores / subagentes  (ref: prowler-studio)
+  Fase 5  ██████████  ✅ HECHA — Orquestación multi-agente por ondas (opt-in) — ver §13
 ```
 
 ### Fase 1 — entregado
@@ -407,11 +407,119 @@ mi-sitio/                       (ejemplo: web Astro+Tailwind)
 
 ---
 
-## 13. Fuera de alcance (por ahora)
+## 13. Fase 5 — orquestación multi-agente (entregado)
+
+> **Estado: ENTREGADO** ✅. Opt-in, igual que el plano SDD; se apoya en
+> `sdd/specs/<feature>/plan.md` — no inventa un motor nuevo. Lo construido:
+> - `spec.md` gana sección **Contract** · `plan.md` gana **Agent** + **Depends on** por fase.
+> - `config.yaml` `orchestration.agents` (roster) + `rules.orchestrate`.
+> - **`sprout sdd waves <feature>`** — calcula y muestra las ondas (paralelo ║ vs espera).
+> - **`sprout sdd handoff <feature> <phase>`** — escribe el brief autocontenido en
+>   `handoffs/phase-<n>.md` (fase + goal + ACs + Contract + convenciones + reglas de scope).
+> - skill **`sdd-orchestrate`** (loop de ondas) + `sdd-plan` asigna Agent/Depends-on.
+> - Helper `extract_md_section` en `lib/common.sh`. Dispatch **manual** (no invoca CLIs).
+>
+> El diseño y el porqué de cada decisión, abajo.
+
+### Principio rector
+
+**El artefacto ES la API entre agentes.** El cuello de botella de multi-agente no es el
+trabajo, es el *handoff de contexto*: cada agente tiene ventana, convenciones y memoria
+distintas. Por eso el brief de cada fase debe ser **autocontenido** — el agente destino lo
+ejecuta sin necesitar la cabeza del planificador. NO se construye un orquestador que invoque
+y parsee varias CLIs (frágil, auth/formato por CLI, y rompe el "sin IA en el scaffolding"):
+**el dispatch es manual**, con checkpoint humano. Se automatiza solo si se mide que el ruteo
+ahorra tiempo/cuota de verdad.
+
+### Por qué heterogéneo (Claude + Gemini + opencode/minimax)
+
+No es solo "el mejor modelo por tarea": **distribuye carga entre suscripciones** y esquiva el
+límite de agentes Claude concurrentes (ver constraint de cuota del owner). **Claude planifica
+y revisa** (un solo cerebro reparte, un solo revisor contra los mismos criterios de
+aceptación). El resto codea su slice. Copilot queda **fuera** de la orquestación (es
+autocompletado inline, no un agente autónomo de tarea).
+
+### Mecánica (responde "¿cada agente ejecuta solo lo suyo?")
+
+Sí — pero por construcción, no por confianza:
+
+1. **`plan.md` gana un campo `agent:` por fase** (`claude` | `gemini` | `minimax` | …). Es el
+   mapa de ruteo, que decide Claude al planear.
+2. **`sprout sdd handoff <feature> <phase>`** (o skill `sdd-handoff`) emite un **brief
+   autocontenido** de esa fase: slice relevante del spec + tareas de la fase + criterios de
+   aceptación (AC#) + convenciones de `config.yaml` + el contrato (ver abajo). Mismo patrón
+   mecánico que `sprout sdd spec new`.
+3. **Tú abres el agente destino y le pegas SOLO su brief.** Como solo ve su pedazo, solo hace
+   su pedazo; y el brief lleva la regla explícita *"implementa SOLO esta fase, no inicies las
+   demás"* (la misma de `sdd-build`). El `agent:` rutea; el brief por-fase es lo que garantiza
+   el aislamiento.
+4. **Claude revisa** el resultado contra los AC# de esa fase (skill `sdd-verify` ya existente).
+
+### El contrato (resuelve el borde front/back)
+
+Si Gemini hace front y minimax back por separado, la integración se rompe (tipos compartidos,
+endpoints). El `spec.md` gana una sección **Contract** (data shapes + API) que es la fuente de
+verdad del borde: ambos lados construyen contra ella, no contra suposiciones. El handoff de
+cada lado incluye el contrato completo.
+
+### Ejecución en ondas (paralelo vs serial)
+
+La regla: **paralelo dentro de una onda de fases independientes; serial entre ondas que
+dependen unas de otras.** "Independiente" = no comparten archivos **y** ninguna consume lo
+que la otra produce. El orden lo deriva el campo `depends_on:` de cada fase en `plan.md`:
+las fases sin dependencias pendientes forman la onda actual y se despachan juntas; las que
+dependen de ellas esperan a la siguiente onda.
+
+```
+Onda 0  (serial)   Claude planea + CONGELA el Contract        ← nadie codea aún
+Onda 1  (paralelo) front (gemini)  ║  back (minimax)           ← ambos contra el MISMO contrato
+Onda 2  (serial)   integración + Claude revisa contra AC#      ← depends_on: [front, back]
+```
+
+Reglas que hacen segura una onda paralela:
+
+1. **Contrato congelado antes de la onda.** Sin Contract estable, los lados paralelos asumen
+   formas de datos distintas y la integración revienta — se pierde más en el merge que lo
+   ganado en paralelo. Por eso Onda 0 es siempre serial.
+2. **Independencia a nivel de archivos.** Dos fases "lógicamente" independientes que tocan los
+   mismos archivos = conflictos de merge. Paralelizá solo fases en módulos/carpetas distintos
+   (front/back lo cumplen naturalmente).
+3. **El review no espera a toda la onda.** Claude revisa cada fase apenas cierra, contra sus
+   AC#. Solo la fase de integración (la que tiene `depends_on:`) espera a que la onda previa
+   termine entera.
+4. **El dispatcher sos vos.** Paralelo manual = manejar 2+ agentes a la vez (2 terminales,
+   2 briefs, 2 resultados). Vale cuando las fases son largas e independientes; para tareas
+   chicas el overhead de coordinación humana no compensa → serial.
+
+### Piezas (construidas)
+
+| Pieza | Qué |
+|---|---|
+| `templates/plan.md` | **Agent** + **Depends on** por fase (derivan las ondas) |
+| `templates/spec.md` | sección **Contract** (data shapes / API del borde) |
+| `config.yaml` | `orchestration.agents` (roster) + `rules.orchestrate` |
+| `sprout sdd handoff <feature> <phase> [dir]` | emite el brief autocontenido a `handoffs/phase-<n>.md` |
+| `sprout sdd waves <feature> [dir]` | lee `Depends on:` y lista qué fases corren juntas / esperan |
+| skill `sdd-orchestrate` | loop de ondas (brief → dispatch → review); `sdd-plan` asigna Agent/Depends-on |
+| `lib/common.sh` | helper `extract_md_section` (extrae secciones de spec/plan) |
+
+### Riesgos / preguntas abiertas
+
+- Fan-out real (una onda con varias fases en paralelo) solo vale si las fases son
+  independientes a nivel de archivos y comparten un Contract congelado — si no, `depends_on:`
+  las serializa y el beneficio se diluye.
+- Adherencia a convenciones de minimax/Gemini < Claude → se mitiga con brief estrecho +
+  `config.yaml`, pero el review de Claude sigue siendo el guardarraíl.
+- Medir antes de automatizar: ¿el ahorro de cuota/tiempo supera el costo de coordinación?
+
+---
+
+## 14. Fuera de alcance (por ahora)
 
 - **MCP** (incluido Context7) — parqueado hasta que lo quieras.
 - IA en el scaffolding.
-- Orquestadores / subagentes (Fase 5).
+- Orquestación multi-agente automática (dispatch a CLIs) — Fase 5 la deja **manual** a
+  propósito; el motor automático queda fuera hasta medir que vale la pena.
 
 ---
 

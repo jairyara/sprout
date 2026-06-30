@@ -201,3 +201,16 @@ read_list() {
     [ -f "$1" ] || return 0
     sed -e 's/#.*$//' "$1" | tr '\n' ' ' | tr -s ' '
 }
+
+# ── SDD markdown helpers (used by `sprout sdd handoff|waves`) ─────────────────
+# extract_md_section <file> <start-regex> — print from the first line matching
+# <start-regex> up to (but not including) the next top-level boundary (a `## ` heading
+# or a `---` rule). Lets us pull one `## Section` (or one `## Phase N` block) verbatim
+# from our own templated spec.md / plan.md.
+extract_md_section() {
+    awk -v re="$2" '
+        !grab && $0 ~ re { grab=1; print; next }
+        grab && (/^## / || /^---[[:space:]]*$/) { exit }
+        grab { print }
+    ' "$1"
+}
