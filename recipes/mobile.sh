@@ -11,13 +11,23 @@ recipe_configure() {
         'flutter|flutter      — Dart (iOS + Android + more)' \
         'kotlin|kotlin       — native Android' \
         'swift|swift        — native iOS')")"
-    if ask_yn '2 · git init + first commit?' n; then GIT_INIT=1; else GIT_INIT=0; fi
+    # language only applies to react-native (Expo); flutter/kotlin/swift have their own.
+    _gitn=2
+    case "$STACK" in
+        react-native|rn|expo)
+            LANG="$(pick_one '2 · language' 'ts' "$(printf '%s\n' \
+                'ts|typescript' \
+                'js|javascript')")"
+            _gitn=3 ;;
+    esac
+    if ask_yn "$_gitn · git init + first commit?" n; then GIT_INIT=1; else GIT_INIT=0; fi
 }
 
 _mb_react_native() {
     if ! have "$PM"; then warn "$PM not found — empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; fi
+    _tpl=blank; [ "$LANG" = ts ] && _tpl=blank-typescript
     # Expo picks its install pm from the one used to invoke create-expo-app.
-    pm_create expo-app@latest "$PROJECT_NAME" --template blank
+    pm_create expo-app@latest "$PROJECT_NAME" --template "$_tpl"
     dim "  start it:  cd $PROJECT_NAME && $(pm_exec "$PM") expo start"
     return 0
 }
@@ -58,7 +68,9 @@ _mb_git() {
 }
 
 recipe_run() {
-    STACK="${STACK:-react-native}"
+    STACK="${STACK:-react-native}"; LANG="${LANG:-ts}"
+    STACK_LABEL="$STACK"
+    case "$STACK" in react-native|rn|expo) STACK_LABEL="$STACK · $LANG" ;; esac
 
     head "1 · scaffold ($STACK)"
     [ -e "$PROJECT_DIR" ] && [ "$DRY_RUN" != 1 ] && { err "path already exists: $PROJECT_DIR"; exit 1; }
@@ -75,7 +87,7 @@ recipe_run() {
     apply_overlay "$PROJECT_DIR" mobile
 
     head "3 · AGENTS.md"
-    render_agents_md "$PROJECT_DIR" "$PROJECT_NAME" "$TYPE" "$STACK"
+    render_agents_md "$PROJECT_DIR" "$PROJECT_NAME" "$TYPE" "$STACK_LABEL"
 
     head "4 · skills (download & vendor)"
     # shellcheck disable=SC2086
@@ -92,6 +104,6 @@ recipe_run() {
 
     head "done"
     ok "project '$PROJECT_NAME' ready at $PROJECT_DIR"
-    dim "  stack: $STACK"
+    dim "  stack: $STACK_LABEL"
     dim "  next:  cd $PROJECT_NAME  &&  divvy"
 }

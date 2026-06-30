@@ -56,7 +56,7 @@ Options:
                           ext/wxt: pnpm|npm|yarn|bun (def: pnpm if present)
   --base <name>           web base: astro|vanilla (def: astro)
   --css <name>            web css: none|sass|less|tailwind|bootstrap (def: tailwind)
-  --lang <name>           web language: ts|js (def: ts)
+  --lang <name>           language for web · desktop/tauri · mobile/react-native: ts|js (def: ts)
   --linter <name>         web linter: none|biome|eslint (def: none)
   --test "a,b"            web testing (any/both): playwright,vitest (def: none)
   --git / --no-git        git init + first commit after scaffold (def: no)

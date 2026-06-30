@@ -11,13 +11,22 @@ recipe_configure() {
         'wails|wails  — Go core + web UI' \
         'fyne|fyne   — pure Go GUI toolkit' \
         'egui|egui   — pure Rust immediate-mode GUI')")"
-    if ask_yn '2 · git init + first commit?' n; then GIT_INIT=1; else GIT_INIT=0; fi
+    # language only applies to tauri (its web frontend is JS/TS); the rest are Go/Rust.
+    _gitn=2
+    if [ "$STACK" = tauri ]; then
+        LANG="$(pick_one '2 · language (web frontend)' 'ts' "$(printf '%s\n' \
+            'ts|typescript' \
+            'js|javascript')")"
+        _gitn=3
+    fi
+    if ask_yn "$_gitn · git init + first commit?" n; then GIT_INIT=1; else GIT_INIT=0; fi
 }
 
 _dt_tauri() {
     if ! have "$PM"; then warn "$PM not found — empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; fi
+    _tpl=vanilla; [ "$LANG" = ts ] && _tpl=vanilla-ts
     # create-tauri-app honours --manager (pnpm|npm|yarn|bun) for the web frontend.
-    pm_create tauri-app@latest "$PROJECT_NAME" --template vanilla --manager "$PM" --yes
+    pm_create tauri-app@latest "$PROJECT_NAME" --template "$_tpl" --manager "$PM" --yes
     have cargo || dim "  install Rust (https://rustup.rs) to build/run the Tauri app"
     return 0
 }
@@ -105,7 +114,8 @@ _dt_git() {
 }
 
 recipe_run() {
-    STACK="${STACK:-tauri}"
+    STACK="${STACK:-tauri}"; LANG="${LANG:-ts}"
+    STACK_LABEL="$STACK"; [ "$STACK" = tauri ] && STACK_LABEL="$STACK · $LANG"
 
     head "1 · scaffold ($STACK)"
     [ -e "$PROJECT_DIR" ] && [ "$DRY_RUN" != 1 ] && { err "path already exists: $PROJECT_DIR"; exit 1; }
@@ -122,7 +132,7 @@ recipe_run() {
     apply_overlay "$PROJECT_DIR" desktop
 
     head "3 · AGENTS.md"
-    render_agents_md "$PROJECT_DIR" "$PROJECT_NAME" "$TYPE" "$STACK"
+    render_agents_md "$PROJECT_DIR" "$PROJECT_NAME" "$TYPE" "$STACK_LABEL"
 
     head "4 · skills (download & vendor)"
     # shellcheck disable=SC2086
@@ -139,6 +149,6 @@ recipe_run() {
 
     head "done"
     ok "project '$PROJECT_NAME' ready at $PROJECT_DIR"
-    dim "  stack: $STACK"
+    dim "  stack: $STACK_LABEL"
     dim "  next:  cd $PROJECT_NAME  &&  divvy"
 }
