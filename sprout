@@ -38,6 +38,7 @@ LANG=""        # ts | js
 LINTER=""      # biome | eslint | none
 TESTING=""     # none | playwright | vitest
 GIT_INIT=0     # 1 = git init + first commit
+SDD_INIT=0     # 1 = install the SDD plane (kit + flow skills) into the project
 NONINTERACTIVE=0
 
 usage() {
@@ -60,6 +61,7 @@ Options:
   --linter <name>         web linter: none|biome|eslint (def: none)
   --test "a,b"            web testing (any/both): playwright,vitest (def: none)
   --git / --no-git        git init + first commit after scaffold (def: no)
+  --sdd / --no-sdd        install the SDD plane (kit + flow skills) (def: no)
   --stack <name>          stack variant (e.g. fullstack: laravel|django|fastapi; cli: sh|rust|go)
   --skills "a,b@1.2.0"    override the skill set; pin a skill with name@ref
   --agent  "claude gemini codex copilot opencode"   agent context to wire (def: claude)
@@ -349,6 +351,8 @@ run_recipe() {
             --test)        TESTING="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
             --git)         GIT_INIT=1; shift ;;
             --no-git)      GIT_INIT=0; shift ;;
+            --sdd)         SDD_INIT=1; shift ;;
+            --no-sdd)      SDD_INIT=0; shift ;;
             --skills)      SKILLS_SEL="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
             --agent)       AGENTS_SEL="$2"; shift 2 ;;
             --clis)        CLIS_INSTALL="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
@@ -365,7 +369,7 @@ run_recipe() {
     [ -n "$PM" ] || PM="$(default_pm_js)"
     PROJECT_DIR="$PWD/$PROJECT_NAME"
     export PROJECT_NAME PROJECT_DIR TYPE STACK PM AGENTS_SEL SKILLS_SEL DRY_RUN INSTALL_CLIS CLIS_INSTALL
-    export BASE CSS LANG LINTER TESTING GIT_INIT DB
+    export BASE CSS LANG LINTER TESTING GIT_INIT DB SDD_INIT
 
     head "sprout — $TYPE: $PROJECT_NAME"
     . "$SPROUT_DIR/recipes/$TYPE.sh"
@@ -448,11 +452,17 @@ wizard() {
     _cli_pre="$(clis_missing "$TYPE")"
     CLIS_INSTALL="$(pick_many 'Global CLIs to install (already-present ones are skipped)' "$_cli_pre" "$_cli_items")"
 
+    # SDD plane — opt-in spec-driven flow (kit + sdd-* skills). Off by default;
+    # you can also add it later with `sprout sdd init`.
+    _sdd_flag=--no-sdd
+    if ask_yn 'Install the SDD plane? (spec → plan → build → verify flow)' n; then _sdd_flag=--sdd; fi
+
     run_recipe "$TYPE" "$PROJECT_NAME" \
         --pm "$PM" \
         --skills "$(echo "$SKILLS_SEL" | tr ' ' ',')" \
         --agent "$AGENTS_SEL" \
-        --clis "$(echo "$CLIS_INSTALL" | tr ' ' ',')"
+        --clis "$(echo "$CLIS_INSTALL" | tr ' ' ',')" \
+        "$_sdd_flag"
 }
 
 # ── dispatch ─────────────────────────────────────────────────────────────────
