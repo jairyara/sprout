@@ -15,9 +15,10 @@ recipe_configure() {
 }
 
 _mb_react_native() {
-    if ! have npx; then warn "node/npx not found — empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; fi
-    run npx --yes create-expo-app@latest "$PROJECT_NAME" --template blank
-    dim "  start it:  cd $PROJECT_NAME && npx expo start"
+    if ! have "$PM"; then warn "$PM not found — empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; fi
+    # Expo picks its install pm from the one used to invoke create-expo-app.
+    pm_create expo-app@latest "$PROJECT_NAME" --template blank
+    dim "  start it:  cd $PROJECT_NAME && $(pm_exec "$PM") expo start"
     return 0
 }
 

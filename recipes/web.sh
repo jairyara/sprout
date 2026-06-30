@@ -46,29 +46,15 @@ recipe_configure() {
     if ask_yn '6 · git init + first commit?' n; then GIT_INIT=1; else GIT_INIT=0; fi
 }
 
-# ── per-package-manager helpers ──────────────────────────────────────────────
-# _create <create-pkg> <name> <flags...>  — `<pm> create <pkg> <name> [-- ]<flags>`
-_create() {
-    _pkg="$1"; _name="$2"; shift 2
-    # shellcheck disable=SC2068
-    case "$PM" in
-        npm)  run npm  create "$_pkg" "$_name" -- "$@" ;;
-        pnpm) run pnpm create "$_pkg" "$_name"    "$@" ;;
-        yarn) run yarn create "$_pkg" "$_name"    "$@" ;;
-        bun)  run bun  create "$_pkg" "$_name"    "$@" ;;
-        *)    run npm  create "$_pkg" "$_name" -- "$@" ;;
-    esac
-}
-_pm_install()     { case "$PM" in yarn) echo yarn ;; *) echo "$PM install" ;; esac; }
-_pm_runtime_add() { case "$PM" in pnpm) echo "pnpm add" ;; yarn) echo "yarn add" ;; bun) echo "bun add" ;; *) echo "npm install" ;; esac; }
-
 # ── scaffold ──────────────────────────────────────────────────────────────────
+# JS package-manager helpers (pm_create / pm_install / pm_runtime_add) live in
+# lib/common.sh so every JS recipe (web, desktop, mobile, ext) shares them.
 _web_scaffold() {
     if [ "$BASE" = vanilla ]; then
         _tpl=vanilla; [ "$LANG" = ts ] && _tpl=vanilla-ts
         if have "$PM"; then
-            _create vite@latest "$PROJECT_NAME" --template "$_tpl" --no-interactive
-            in_project $(_pm_install)          # vite does not auto-install
+            pm_create vite@latest "$PROJECT_NAME" --template "$_tpl" --no-interactive
+            in_project $(pm_install "$PM")     # vite does not auto-install
         else
             warn "$PM not found — creating an empty project dir instead"; run mkdir -p "$PROJECT_DIR"
         fi
@@ -77,7 +63,7 @@ _web_scaffold() {
         [ "$CSS" = tailwind ] && _flags="$_flags --add tailwind"   # official Astro integration
         if have "$PM"; then
             # shellcheck disable=SC2086
-            _create astro@latest "$PROJECT_NAME" $_flags
+            pm_create astro@latest "$PROJECT_NAME" $_flags
         else
             warn "$PM not found — creating an empty project dir instead"; run mkdir -p "$PROJECT_DIR"
         fi
@@ -115,7 +101,7 @@ _web_css() {
         bootstrap)
             say "css: bootstrap"
             # shellcheck disable=SC2086
-            in_project $(_pm_runtime_add) bootstrap
+            in_project $(pm_runtime_add "$PM") bootstrap
             dim "  import 'bootstrap/dist/css/bootstrap.min.css' in your entry" ;;
         *) warn "unknown css option '$CSS' — skipping" ;;
     esac

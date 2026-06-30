@@ -15,8 +15,9 @@ recipe_configure() {
 }
 
 _dt_tauri() {
-    if ! have npm; then warn "npm not found — empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; fi
-    run npm create tauri-app@latest "$PROJECT_NAME" -- --template vanilla --manager npm --yes
+    if ! have "$PM"; then warn "$PM not found — empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; fi
+    # create-tauri-app honours --manager (pnpm|npm|yarn|bun) for the web frontend.
+    pm_create tauri-app@latest "$PROJECT_NAME" --template vanilla --manager "$PM" --yes
     have cargo || dim "  install Rust (https://rustup.rs) to build/run the Tauri app"
     return 0
 }

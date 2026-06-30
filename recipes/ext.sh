@@ -13,9 +13,11 @@ recipe_configure() {
 }
 
 _ext_wxt() {
-    if ! have npx; then warn "node/npx not found — falling back to vanilla MV3"; _ext_vanilla; return 0; fi
-    run npx --yes wxt@latest init "$PROJECT_NAME" --template vanilla
-    dim "  dev:  cd $PROJECT_NAME && npm install && npm run dev"
+    if ! have "$PM"; then warn "$PM not found — falling back to vanilla MV3"; _ext_vanilla; return 0; fi
+    # wxt init honours --pm (pnpm|npm|yarn|bun) for the install it runs.
+    # shellcheck disable=SC2086
+    run $(pm_dlx "$PM") wxt@latest init "$PROJECT_NAME" --template vanilla --pm "$PM"
+    dim "  dev:  cd $PROJECT_NAME && $(pm_install "$PM") && $PM run dev"
     return 0
 }
 

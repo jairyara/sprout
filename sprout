@@ -52,7 +52,8 @@ Usage:
 Types:   web  fullstack  desktop  mobile  ext  cli  (Phase 1 ships: web)
 
 Options:
-  --pm <name>             JS package manager: pnpm|npm|yarn|bun (def: pnpm if present)
+  --pm <name>             JS package manager for web · desktop/tauri · mobile/react-native ·
+                          ext/wxt: pnpm|npm|yarn|bun (def: pnpm if present)
   --base <name>           web base: astro|vanilla (def: astro)
   --css <name>            web css: none|sass|less|tailwind|bootstrap (def: tailwind)
   --lang <name>           web language: ts|js (def: ts)
@@ -371,6 +372,23 @@ run_recipe() {
     recipe_run
 }
 
+# _type_uses_js_pm <type> <stack> — true when the chosen config scaffolds with a
+# JS package manager, so the wizard should ask which one (pnpm by default).
+#   web              — always (Astro/Vite)
+#   desktop/tauri    — web frontend (create-tauri-app honours --manager)
+#   mobile/react-native — Expo
+#   ext/wxt          — wxt framework
+# desktop/wails keeps its own npm default; fullstack has no JS stack yet.
+_type_uses_js_pm() {
+    case "$1" in
+        web) return 0 ;;
+        desktop) [ "$2" = tauri ] ;;
+        mobile)  case "$2" in react-native|rn|expo) return 0 ;; *) return 1 ;; esac ;;
+        ext)     [ "$2" = wxt ] ;;
+        *) return 1 ;;
+    esac
+}
+
 # ── wizard ───────────────────────────────────────────────────────────────────
 
 wizard() {
@@ -399,8 +417,9 @@ wizard() {
         command -v recipe_configure >/dev/null 2>&1 && recipe_configure
     fi
 
-    # JS package manager — only relevant for JS stacks (web). Offer all four, tagged.
-    if [ "$TYPE" = web ]; then
+    # JS package manager — only asked for configs that scaffold with one
+    # (web, desktop/tauri, mobile/react-native, ext/wxt). Offer all four, tagged.
+    if _type_uses_js_pm "$TYPE" "$STACK"; then
         _pm_items="$(for _p in pnpm npm yarn bun; do
             if have "$_p"; then printf '%s|%s  (installed)\n' "$_p" "$_p"
             else               printf '%s|%s  (missing)\n'   "$_p" "$_p"; fi

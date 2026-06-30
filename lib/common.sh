@@ -138,6 +138,27 @@ pm_add() {
     esac
 }
 
+# pm_create <create-pkg> <name> <flags...> — run `<PM> create <pkg> <name> [-- ]<flags>`.
+# npm needs the `--` separator before the create script's own flags; the others don't.
+# Uses the global $PM and the `run` wrapper (so it honours DRY_RUN).
+pm_create() {
+    _pkg="$1"; _name="$2"; shift 2
+    # shellcheck disable=SC2068
+    case "$PM" in
+        npm)  run npm  create "$_pkg" "$_name" -- "$@" ;;
+        pnpm) run pnpm create "$_pkg" "$_name"    "$@" ;;
+        yarn) run yarn create "$_pkg" "$_name"    "$@" ;;
+        bun)  run bun  create "$_pkg" "$_name"    "$@" ;;
+        *)    run npm  create "$_pkg" "$_name" -- "$@" ;;
+    esac
+}
+
+# pm_install <pm> — command to install all declared dependencies
+pm_install()     { case "$1" in yarn) echo yarn ;; *) echo "$1 install" ;; esac; }
+
+# pm_runtime_add <pm> — command to add a runtime (non-dev) dependency
+pm_runtime_add() { case "$1" in pnpm) echo "pnpm add" ;; yarn) echo "yarn add" ;; bun) echo "bun add" ;; *) echo "npm install" ;; esac; }
+
 # ensure_pm <pm> — make a JS package manager available (best effort).
 # pnpm/yarn ship via Corepack (bundled with Node); bun via brew/pacman.
 ensure_pm() {
