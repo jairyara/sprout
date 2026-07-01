@@ -55,14 +55,14 @@ Types:   web  fullstack  desktop  mobile  ext  cli  (Phase 1 ships: web)
 Options:
   --pm <name>             JS package manager for web · desktop/tauri · mobile/react-native ·
                           ext/wxt: pnpm|npm|yarn|bun (def: pnpm if present)
-  --base <name>           web base: astro|vanilla (def: astro)
+  --base <name>           web base: astro|react|vanilla (def: astro)
   --css <name>            web css: none|sass|less|tailwind|bootstrap (def: tailwind)
-  --lang <name>           language for web · desktop/tauri · mobile/react-native: ts|js (def: ts)
+  --lang <name>           language for web · desktop/tauri · mobile/react-native · fullstack/workers: ts|js (def: ts)
   --linter <name>         web linter: none|biome|eslint (def: none)
   --test "a,b"            web testing (any/both): playwright,vitest (def: none)
   --git / --no-git        git init + first commit after scaffold (def: no)
   --sdd / --no-sdd        install the SDD plane (kit + flow skills) (def: no)
-  --stack <name>          stack variant (e.g. fullstack: laravel|django|fastapi; cli: sh|rust|go)
+  --stack <name>          stack variant (e.g. fullstack: laravel|django|fastapi|workers|react-workers; cli: sh|rust|go)
   --skills "a,b@1.2.0"    override the skill set; pin a skill with name@ref
   --agent  "claude gemini codex copilot opencode"   agent context to wire (def: claude)
   --clis   "gh,fzf"       install only these missing global CLIs (the wizard sets this)
@@ -261,6 +261,7 @@ cmd_doctor() {
     _chk_any "fullstack/python" \
         "fullstack(django|fastapi): install 'uv' (astral.sh/uv) or python3" \
         uv python3
+    dim "  fullstack/workers·react-workers — uses your JS package manager (create-cloudflare/Vite); wrangler runs via npx"
     _chk_any "desktop/tauri+egui (Rust)" \
         "desktop(tauri|egui): install Rust via rustup.rs ('cargo')" \
         cargo
@@ -539,13 +540,15 @@ run_recipe() {
 #   desktop/tauri    — web frontend (create-tauri-app honours --manager)
 #   mobile/react-native — Expo
 #   ext/wxt          — wxt framework
-# desktop/wails keeps its own npm default; fullstack has no JS stack yet.
+#   fullstack/workers · react-workers — Cloudflare Workers (C3) / Vite (create-cloudflare, create-vite)
+# desktop/wails keeps its own npm default; fullstack's PHP/Python stacks don't use a JS pm.
 _type_uses_js_pm() {
     case "$1" in
         web) return 0 ;;
         desktop) [ "$2" = tauri ] ;;
         mobile)  case "$2" in react-native|rn|expo) return 0 ;; *) return 1 ;; esac ;;
         ext)     [ "$2" = wxt ] ;;
+        fullstack) case "$2" in workers|react-workers) return 0 ;; *) return 1 ;; esac ;;
         *) return 1 ;;
     esac
 }
@@ -559,8 +562,8 @@ wizard() {
     # Only types with a recipe are buildable; the rest show "(soon)" and re-prompt.
     while :; do
         TYPE="$(pick_one 'What do you want to build?' web "$(printf '%s\n' \
-            'web|web        Astro or Vanilla  →  CSS  →  JS/TS' \
-            'fullstack|fullstack  Laravel · Django · FastAPI' \
+            'web|web        Astro · React · Vanilla  →  CSS  →  JS/TS' \
+            'fullstack|fullstack  Laravel · Django · FastAPI · Workers · React+Workers' \
             'desktop|desktop    Tauri · Wails · Fyne · egui' \
             'mobile|mobile     React Native · Flutter · Kotlin · Swift' \
             'ext|ext        Chromium extension (MV3)' \

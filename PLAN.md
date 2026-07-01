@@ -237,8 +237,8 @@ $ sprout
   sprout — nuevo proyecto
 
   1/3  ¿Qué quieres hacer?
-       › web        Astro + Tailwind
-         fullstack  Laravel · Django · FastAPI
+       › web        Astro · React · Vanilla
+         fullstack  Laravel · Django · FastAPI · Workers · React+Workers
          desktop    Tauri · Wails · Fyne · egui
          mobile     React Native · Flutter · Kotlin · Swift
          ext        Extensión Chromium (MV3)
@@ -262,7 +262,10 @@ $ sprout
 
 ```sh
 sprout web mi-sitio
+sprout web mi-spa --base react --css tailwind          # SPA React (Vite) + Tailwind
 sprout fullstack api --stack fastapi --agent "claude gemini"
+sprout fullstack mi-api --stack workers --test vitest  # API Hono en Cloudflare Workers
+sprout fullstack mi-app --stack react-workers          # monorepo React (web/) + Worker (api/)
 sprout desktop util --stack egui --skills "debugging,commits" --no-divvy
 sprout web mi-sitio --skills "frontend-design@1.2.0,impeccable@latest"  # pin por skill
 sprout web mi-sitio --install-clis     # instala las CLIs faltantes (global); sin el flag solo avisa
@@ -317,10 +320,10 @@ mi-sitio/                       (ejemplo: web Astro+Tailwind)
 
 ## 11. Defaults por tipo
 
-| Tipo | Default | Variantes (`--stack`) |
+| Tipo | Default | Variantes (`--stack` / `--base`) |
 |---|---|---|
-| web | Astro + Tailwind | — |
-| fullstack | Laravel | django · fastapi |
+| web | Astro + Tailwind | `--base` react (Vite SPA) · vanilla (Vite) |
+| fullstack | Laravel | django · fastapi · workers (Hono/Cloudflare) · react-workers (monorepo) |
 | desktop | Tauri | wails · fyne · egui |
 | mobile | React Native | flutter · kotlin · swift |
 | ext | Chromium MV3 | — |
@@ -342,7 +345,7 @@ mi-sitio/                       (ejemplo: web Astro+Tailwind)
   con ↑/↓ · espacio · `a` todos · enter · q. Cada item muestra su descripción.
 - **Dispatcher + flags** (`sprout`): tipos solo seleccionables si tienen receta; el resto
   reprompta. Sin paso de gestor JS en stacks no-JS.
-- **recipes/web.sh** — árbol paso 1: `base` (astro | vanilla/Vite) → `css`
+- **recipes/web.sh** — árbol paso 1: `base` (astro | react/Vite | vanilla/Vite) → `css`
   (none | sass | less | tailwind | bootstrap; preprocessor pregunta sass/less) →
   `lang` (ts | js) → `linter` (biome | eslint+prettier | none) → `testing`
   (playwright + vitest, **multi**) → `git`. Wiring real validado (vite.config+import
@@ -357,6 +360,10 @@ mi-sitio/                       (ejemplo: web Astro+Tailwind)
 ### Fase 2 — entregado
 - **recipes/fullstack.sh**: laravel (`laravel new`, real-tested) · django · fastapi
   (uv-first, fallback venv+pip) · `--db sqlite|postgres|mysql` · tests · git.
+  **Stacks JS/edge** (añadidos): `workers` (API Hono en Cloudflare Workers vía create-cloudflare/C3,
+  wrangler incluido; sin DB relacional → bindings D1/KV/R2; test opcional vitest +
+  `@cloudflare/vitest-pool-workers`) · `react-workers` (monorepo: `web/` Vite React + `api/` Worker Hono
+  + manifest de workspace). Ambos usan el gestor JS (`_type_uses_js_pm` los reconoce), lenguaje `ts` por defecto.
 - **recipes/desktop.sh**: tauri · wails · fyne · egui.
 - **recipes/mobile.sh**: react-native (Expo) · flutter · kotlin (degrada) · swift (SPM+nota).
 - **recipes/ext.sh**: vanilla MV3 (self-scaffold, real-tested) · wxt.

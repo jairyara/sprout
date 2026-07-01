@@ -166,6 +166,8 @@ sprout doctor
 ```sh
 sprout                       # interactive wizard (default)
 sprout web my-site           # non-interactive: an Astro + Tailwind site
+sprout web my-spa --base react --css tailwind   # React SPA (Vite) + Tailwind
+sprout fullstack api --stack workers            # Hono API on Cloudflare Workers
 sprout --dry-run web demo    # show every step, change nothing
 ```
 
@@ -185,7 +187,8 @@ sprout --version
 **Common options** (see `sprout --help` for all):
 
 ```sh
---stack <name>          stack variant (e.g. fullstack: laravel|django|fastapi)
+--base <name>           web base: astro|react|vanilla (default: astro)
+--stack <name>          stack variant (e.g. fullstack: laravel|django|fastapi|workers|react-workers)
 --skills "a,b@1.2.0"    override the skill set; pin a skill with name@ref
 --agent "claude gemini" agent context to wire (default: claude)
 --install-clis          install ALL missing global CLIs (default: only warn)
@@ -194,13 +197,16 @@ sprout --version
 
 ### Project types
 
-| Type | Default | Variants (`--stack`) |
+| Type | Default | Variants (`--stack` / `--base`) |
 |---|---|---|
-| `web` | Astro + Tailwind | — |
-| `fullstack` | Laravel | django · fastapi |
+| `web` | Astro + Tailwind | `--base` react (Vite SPA) · vanilla (Vite) |
+| `fullstack` | Laravel | django · fastapi · workers (Hono/Cloudflare) · react-workers (monorepo) |
 | `desktop` | Tauri | wails · fyne · egui |
 | `mobile` | React Native | flutter · kotlin · swift |
 | `ext` | Chromium MV3 | wxt |
+
+> `workers` scaffolds a Hono API on Cloudflare Workers (via `create-cloudflare`, wrangler included);
+> `react-workers` scaffolds a monorepo with a Vite React frontend in `web/` and a Hono Worker API in `api/`.
 
 ### What a generated project looks like
 
@@ -373,6 +379,8 @@ sprout doctor
 ```sh
 sprout                       # asistente interactivo (por defecto)
 sprout web mi-sitio          # no-interactivo: un sitio Astro + Tailwind
+sprout web mi-spa --base react --css tailwind   # SPA React (Vite) + Tailwind
+sprout fullstack api --stack workers            # API Hono en Cloudflare Workers
 sprout --dry-run web demo    # muestra cada paso, no cambia nada
 ```
 
@@ -392,7 +400,8 @@ sprout --version
 **Opciones comunes** (todas en `sprout --help`):
 
 ```sh
---stack <nombre>        variante de stack (p. ej. fullstack: laravel|django|fastapi)
+--base <nombre>         base web: astro|react|vanilla (def.: astro)
+--stack <nombre>        variante de stack (p. ej. fullstack: laravel|django|fastapi|workers|react-workers)
 --skills "a,b@1.2.0"    sobrescribe el set de skills; fija una con nombre@ref
 --agent "claude gemini" contexto de agente a cablear (def.: claude)
 --install-clis          instala TODAS las CLIs globales faltantes (def.: solo avisa)
@@ -401,13 +410,16 @@ sprout --version
 
 ### Tipos de proyecto
 
-| Tipo | Por defecto | Variantes (`--stack`) |
+| Tipo | Por defecto | Variantes (`--stack` / `--base`) |
 |---|---|---|
-| `web` | Astro + Tailwind | — |
-| `fullstack` | Laravel | django · fastapi |
+| `web` | Astro + Tailwind | `--base` react (SPA Vite) · vanilla (Vite) |
+| `fullstack` | Laravel | django · fastapi · workers (Hono/Cloudflare) · react-workers (monorepo) |
 | `desktop` | Tauri | wails · fyne · egui |
 | `mobile` | React Native | flutter · kotlin · swift |
 | `ext` | Chromium MV3 | wxt |
+
+> `workers` genera una API Hono en Cloudflare Workers (vía `create-cloudflare`, con wrangler incluido);
+> `react-workers` genera un monorepo con el frontend React (Vite) en `web/` y la API Worker Hono en `api/`.
 
 ### Cómo queda un proyecto generado
 

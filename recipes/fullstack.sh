@@ -1,27 +1,40 @@
 # fullstack.sh — recipe for backend / fullstack projects.
 #   stack     laravel (PHP) | django (Python) | fastapi (Python)
-#   database  sqlite | postgres | mysql
-#   testing   Pest (laravel) / pytest (python), optional
+#             workers (Hono API on Cloudflare Workers) | react-workers (React + Worker monorepo)
+#   database  sqlite | postgres | mysql   (relational stacks only; workers use D1/KV/R2 bindings)
+#   testing   Pest (laravel) / pytest (python) / vitest (workers), optional
 #   git       init + first commit, optional
 #
-# Env in:  PROJECT_NAME PROJECT_DIR TYPE STACK DB TESTING GIT_INIT AGENTS_SEL SKILLS_SEL DRY_RUN
+# Env in:  PROJECT_NAME PROJECT_DIR TYPE STACK DB LANG TESTING GIT_INIT AGENTS_SEL SKILLS_SEL DRY_RUN
 
 # ── interactive stack questions (wizard only) ─────────────────────────────────
 recipe_configure() {
     head "configure your fullstack project"
     STACK="$(pick_one '1 · stack' 'laravel' "$(printf '%s\n' \
-        'laravel|laravel  — PHP, batteries-included (Eloquent ORM, routing, auth)' \
-        'django|django   — Python, batteries-included (ORM, admin, migrations)' \
-        'fastapi|fastapi  — Python, minimal async API framework')")"
+        'laravel|laravel       — PHP, batteries-included (Eloquent ORM, routing, auth)' \
+        'django|django        — Python, batteries-included (ORM, admin, migrations)' \
+        'fastapi|fastapi       — Python, minimal async API framework' \
+        'workers|workers       — Hono API on Cloudflare Workers (edge · wrangler)' \
+        'react-workers|react-workers — React (Vite) + Hono Worker API in one repo')")"
 
-    DB="$(pick_one '2 · database' 'sqlite' "$(printf '%s\n' \
-        'sqlite|sqlite    — zero-config file DB (great to start)' \
-        'postgres|postgres  — production-grade relational DB' \
-        'mysql|mysql     — popular relational DB')")"
-
-    if ask_yn '3 · scaffold tests (Pest for Laravel / pytest for Python)?' n; then
-        case "$STACK" in laravel) TESTING=pest ;; *) TESTING=pytest ;; esac
-    else TESTING=""; fi
+    case "$STACK" in
+        workers|react-workers)
+            # edge / JS stacks: no relational DB step (use D1/KV/R2 bindings instead)
+            DB=""
+            LANG="$(pick_one '2 · language' 'ts' "$(printf '%s\n' \
+                'ts|typescript' \
+                'js|javascript')")"
+            if ask_yn '3 · scaffold tests (vitest — @cloudflare/vitest-pool-workers)?' n; then
+                TESTING=vitest; else TESTING=""; fi ;;
+        *)
+            DB="$(pick_one '2 · database' 'sqlite' "$(printf '%s\n' \
+                'sqlite|sqlite    — zero-config file DB (great to start)' \
+                'postgres|postgres  — production-grade relational DB' \
+                'mysql|mysql     — popular relational DB')")"
+            if ask_yn '3 · scaffold tests (Pest for Laravel / pytest for Python)?' n; then
+                case "$STACK" in laravel) TESTING=pest ;; *) TESTING=pytest ;; esac
+            else TESTING=""; fi ;;
+    esac
 
     if ask_yn '4 · git init + first commit?' n; then GIT_INIT=1; else GIT_INIT=0; fi
 }
@@ -104,6 +117,93 @@ EOF
     return 0
 }
 
+# ── Cloudflare Workers · Hono API (JS/edge) ───────────────────────────────────
+# create-cloudflare (C3) scaffolds a Hono Worker with a wrangler config. Runs through
+# the global $PM (pm_create handles npm's `--` separator). Backend-only / API on the edge.
+_fs_workers() {
+    if ! have "$PM" && ! have npm; then
+        warn "no JS package manager (pnpm/npm/yarn/bun) — creating an empty project dir"; run mkdir -p "$PROJECT_DIR"; return 0
+    fi
+    _lang=ts; [ "$LANG" = js ] && _lang=js
+    # shellcheck disable=SC2086
+    pm_create cloudflare@latest "$PROJECT_NAME" --framework=hono --lang="$_lang" --no-git --no-deploy
+    if [ "$TESTING" = vitest ]; then
+        # shellcheck disable=SC2086
+        in_project $(pm_add "$PM") vitest @cloudflare/vitest-pool-workers
+        dim "  wire vitest to @cloudflare/vitest-pool-workers (see the workers-best-practices skill)"
+    fi
+    dim "  dev:    $(pm_exec "$PM") wrangler dev"
+    dim "  deploy: $(pm_exec "$PM") wrangler deploy"
+    dim "  add D1/KV/R2 bindings in wrangler.jsonc"
+    return 0
+}
+
+# ── React (Vite) + Hono Worker in one repo (monorepo) ─────────────────────────
+# Frontend in web/, edge API in api/. A root manifest ties them into a workspace.
+_fs_react_workers() {
+    if ! have "$PM" && ! have npm; then
+        warn "no JS package manager (pnpm/npm/yarn/bun) — creating an empty project dir"; run mkdir -p "$PROJECT_DIR"; return 0
+    fi
+    run mkdir -p "$PROJECT_DIR"
+    _tpl=react; [ "$LANG" = ts ] && _tpl=react-ts
+    _lang=ts;   [ "$LANG" = js ] && _lang=js
+    _sep=""; [ "$PM" = npm ] && _sep="--"      # npm needs `--` before the create script's flags
+    say "frontend: Vite React → web/"
+    # shellcheck disable=SC2086
+    in_project $PM create vite@latest web $_sep --template "$_tpl"
+    say "backend: Hono Worker → api/"
+    # shellcheck disable=SC2086
+    in_project $PM create cloudflare@latest api $_sep --framework=hono --lang="$_lang" --no-git --no-deploy
+    _fs_react_workers_root
+    return 0
+}
+
+# Root workspace manifest + README for the react-workers monorepo.
+_fs_react_workers_root() {
+    if [ "$DRY_RUN" = 1 ]; then
+        dim "  would write a root workspace manifest (web + api) and README.md"; return 0
+    fi
+    if [ "$PM" = pnpm ]; then
+        cat > "$PROJECT_DIR/pnpm-workspace.yaml" <<'EOF'
+packages:
+  - web
+  - api
+EOF
+        cat > "$PROJECT_DIR/package.json" <<EOF
+{
+  "name": "$PROJECT_NAME",
+  "private": true,
+  "scripts": {
+    "dev:web": "pnpm --filter ./web dev",
+    "dev:api": "pnpm --filter ./api dev",
+    "deploy:api": "pnpm --filter ./api deploy"
+  }
+}
+EOF
+    else
+        cat > "$PROJECT_DIR/package.json" <<EOF
+{
+  "name": "$PROJECT_NAME",
+  "private": true,
+  "workspaces": ["web", "api"]
+}
+EOF
+    fi
+    cat > "$PROJECT_DIR/README.md" <<EOF
+# $PROJECT_NAME
+
+Monorepo: React (Vite) frontend + Hono API on Cloudflare Workers.
+
+- \`web/\` — React SPA (Vite).  dev: \`cd web && $PM run dev\`
+- \`api/\` — Hono Worker.        dev: \`cd api && $(pm_exec "$PM") wrangler dev\` · deploy: \`$(pm_exec "$PM") wrangler deploy\`
+
+Point the frontend at the Worker's URL via an env var (e.g. \`VITE_API_URL\`).
+Add D1 / KV / R2 bindings in \`api/wrangler.jsonc\`.
+EOF
+    ok "wrote root workspace manifest + README.md"
+    return 0
+}
+
 # ── git (optional) ────────────────────────────────────────────────────────────
 _fs_git() {
     [ "$GIT_INIT" = 1 ] || return 0
@@ -118,18 +218,24 @@ _fs_git() {
 
 # ── pipeline ──────────────────────────────────────────────────────────────────
 recipe_run() {
-    STACK="${STACK:-laravel}"; DB="${DB:-sqlite}"
-    STACK_LABEL="$STACK · $DB"
+    STACK="${STACK:-laravel}"; LANG="${LANG:-ts}"   # LANG only used by the JS/edge stacks
+    case "$STACK" in
+        workers)       STACK_LABEL="workers · hono" ;;
+        react-workers) STACK_LABEL="react (vite) + hono worker" ;;
+        *) DB="${DB:-sqlite}"; STACK_LABEL="$STACK · $DB" ;;
+    esac
     if [ -n "$TESTING" ]; then STACK_LABEL="$STACK_LABEL · $TESTING"; fi
 
     # 1 ── scaffold ────────────────────────────────────────────────────────────
     head "1 · scaffold ($STACK)"
     [ -e "$PROJECT_DIR" ] && [ "$DRY_RUN" != 1 ] && { err "path already exists: $PROJECT_DIR"; exit 1; }
     case "$STACK" in
-        laravel) _fs_laravel ;;
-        django)  _fs_django ;;
-        fastapi) _fs_fastapi ;;
-        *) err "unknown fullstack stack '$STACK' (use laravel|django|fastapi)"; exit 1 ;;
+        laravel)       _fs_laravel ;;
+        django)        _fs_django ;;
+        fastapi)       _fs_fastapi ;;
+        workers)       _fs_workers ;;
+        react-workers) _fs_react_workers ;;
+        *) err "unknown fullstack stack '$STACK' (use laravel|django|fastapi|workers|react-workers)"; exit 1 ;;
     esac
     if [ "$DRY_RUN" = 1 ]; then run mkdir -p "$PROJECT_DIR"; fi
 
