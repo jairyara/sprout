@@ -5,6 +5,10 @@
 #   frontend  none (default) | react | vue | astro | vanilla  — fastapi only for now.
 #             Choosing one makes a monorepo: FastAPI in api/, the frontend in web/
 #             (reuses the web plane). No frontend ⇒ flat backend, as before.
+#   docker    --docker (opt-in). fastapi ⇒ dev docker-compose (db + api [+ web]).
+#             laravel ⇒ Laravel Sail (php artisan sail:install). No PHP toolchain ⇒
+#             laravel.build (Docker-only installer); no Python toolchain ⇒ the api
+#             image (uv) provides the runtime.
 #   testing   Pest (laravel) / pytest (python) / vitest (workers), optional
 #   git       init + first commit, optional
 #
@@ -56,19 +60,38 @@ recipe_configure() {
             else TESTING=""; fi ;;
     esac
 
-    if [ "$STACK" = fastapi ]; then
-        _dsvc="db + api"; { [ -n "$BASE" ] && [ "$BASE" != none ]; } && _dsvc="$_dsvc + web"
-        if ask_yn "5 · docker (dev compose: $_dsvc)?" n; then DOCKER=1; else DOCKER=0; fi
-    fi
+    case "$STACK" in
+        fastapi)
+            _dsvc="db + api"; { [ -n "$BASE" ] && [ "$BASE" != none ]; } && _dsvc="$_dsvc + web"
+            if ask_yn "5 · docker (dev compose: $_dsvc)?" n; then DOCKER=1; else DOCKER=0; fi ;;
+        laravel)
+            if ask_yn '5 · docker (Laravel Sail — php artisan sail:install)?' n; then DOCKER=1; else DOCKER=0; fi ;;
+    esac
     if ask_yn '6 · git init + first commit?' n; then GIT_INIT=1; else GIT_INIT=0; fi
 }
 
 # ── Laravel (PHP) ─────────────────────────────────────────────────────────────
+# Docker for Laravel = Sail (its native docker-compose). Opt-in via --docker, which
+# runs `php artisan sail:install`. With no PHP/composer we fall back to laravel.build,
+# the official Docker-only installer (creates a Laravel+Sail app with zero local PHP).
 _fs_laravel() {
-    if ! have laravel && ! have composer; then
-        warn "laravel/composer not found — creating an empty project dir"; run mkdir -p "$PROJECT_DIR"; return 0
-    fi
     _ldb=sqlite; case "$DB" in postgres) _ldb=pgsql ;; mysql) _ldb=mysql ;; esac
+    _sail=pgsql;  case "$DB" in mysql) _sail=mysql ;; sqlite|"") _sail=mailpit ;; esac  # sail service(s)
+
+    if ! have laravel && ! have composer; then
+        if have docker; then
+            say "no PHP/composer — scaffolding via Docker (laravel.build, includes Sail)"
+            # shellcheck disable=SC2086
+            run sh -c "curl -s 'https://laravel.build/$PROJECT_NAME?with=$_sail' | bash" \
+                || warn "laravel.build failed (needs network + Docker running)"
+            dim "  start:  cd $PROJECT_NAME && ./vendor/bin/sail up"
+            return 0
+        fi
+        warn "no laravel/composer and no docker — creating an empty project dir"
+        dim "  install PHP+composer, or Docker (then re-run for the laravel.build path)"
+        run mkdir -p "$PROJECT_DIR"; return 0
+    fi
+
     if have laravel; then
         _flags="--database=$_ldb --no-interaction"
         [ "$TESTING" = pest ] && _flags="$_flags --pest"
@@ -77,6 +100,15 @@ _fs_laravel() {
     else
         run composer create-project laravel/laravel "$PROJECT_NAME"
         dim "  set DB_CONNECTION=$_ldb in .env"
+    fi
+
+    # Sail (dev docker) — opt-in. Sail ships with fresh Laravel; sail:install writes
+    # docker-compose.yml with the chosen services. Guarded so a failure doesn't abort.
+    if [ "$DOCKER" = 1 ]; then
+        head "laravel sail (dev docker)"
+        in_project composer require laravel/sail --dev --no-interaction || warn "could not add laravel/sail (network?)"
+        in_project php artisan sail:install --with="$_sail" || warn "sail:install failed"
+        dim "  start:  ./vendor/bin/sail up"
     fi
     return 0
 }
@@ -120,7 +152,14 @@ _fs_fastapi() {
         in_dir "$_dir" .venv/bin/pip install --quiet --upgrade pip fastapi "uvicorn[standard]"
         [ "$TESTING" = pytest ] && in_dir "$_dir" .venv/bin/pip install --quiet pytest httpx
     else
-        warn "no uv or python3 — leaving $_dir empty"; return 0
+        if [ "${DOCKER:-0}" = 1 ]; then
+            warn "no uv/python3 locally — the api Docker image (uv) will provide the runtime"
+            dim "  app/main.py + a minimal pyproject.toml get scaffolded for the container"
+        else
+            warn "no uv or python3 — leaving $_dir empty"
+            dim "  install uv (curl -LsSf https://astral.sh/uv/install.sh | sh) or re-run with --docker"
+        fi
+        return 0
     fi
     _fs_fastapi_app "$_dir"
     return 0
@@ -526,6 +565,7 @@ recipe_run() {
         *) DB="${DB:-sqlite}"; STACK_LABEL="$STACK · $DB" ;;
     esac
     [ "$_MONO" = 1 ] && STACK_LABEL="$STACK_LABEL + $FRONTEND (web/)"
+    [ "$STACK" = laravel ] && [ "$DOCKER" = 1 ] && STACK_LABEL="$STACK_LABEL · sail"
     if [ -n "$TESTING" ]; then STACK_LABEL="$STACK_LABEL · $TESTING"; fi
 
     # 1 ── scaffold ────────────────────────────────────────────────────────────
