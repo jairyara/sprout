@@ -389,6 +389,7 @@ _fs_docker_compose() {
     _fs_docker_api_service "$_mono" "$_hasdb" "$_amount" >> "$_f"
     [ "$_mono" = 1 ] && _fs_docker_web_service >> "$_f"
     [ "$_hasdb" = 1 ] && printf 'volumes:\n  dbdata:\n' >> "$_f"
+    return 0   # never let a false trailing test bubble up under `set -e`
 }
 
 _fs_docker_env() {
@@ -402,6 +403,7 @@ _fs_docker_env() {
         } >> "$_f"
     fi
     [ "$_mono" = 1 ] && printf '\n# Web\nVITE_API_URL=http://localhost:8000\n' >> "$_f"
+    return 0   # never let a false trailing test bubble up under `set -e`
 }
 
 _fs_docker_makefile() {

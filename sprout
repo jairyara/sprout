@@ -168,10 +168,15 @@ apply_overlay() {
 }
 
 # render_agents_md <project_dir> <name> <type> <stack>
+# Values can contain sed-special chars (/, &, \) — e.g. a stack label like
+# "fastapi · sqlite + react (web/)" — so escape them before substituting.
 render_agents_md() {
     _dir="$1"; _name="$2"; _type="$3"; _stack="${4:-—}"
     say "writing AGENTS.md"
     if [ "$DRY_RUN" = 1 ]; then dim "  would render $_dir/AGENTS.md from template"; return 0; fi
+    _name="$(printf '%s' "$_name"  | sed 's/[\\/&]/\\&/g')"
+    _type="$(printf '%s' "$_type"  | sed 's/[\\/&]/\\&/g')"
+    _stack="$(printf '%s' "$_stack" | sed 's/[\\/&]/\\&/g')"
     sed -e "s/{{PROJECT_NAME}}/$_name/g" \
         -e "s/{{PROJECT_TYPE}}/$_type/g" \
         -e "s/{{PROJECT_STACK}}/$_stack/g" \
