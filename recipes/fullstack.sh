@@ -9,7 +9,7 @@
 #   git       init + first commit, optional
 #
 # Env in:  PROJECT_NAME PROJECT_DIR TYPE STACK DB LANG BASE CSS TESTING GIT_INIT
-#          PM AGENTS_SEL SKILLS_SEL DRY_RUN
+#          DOCKER PM AGENTS_SEL SKILLS_SEL DRY_RUN
 
 # ── interactive stack questions (wizard only) ─────────────────────────────────
 recipe_configure() {
@@ -56,7 +56,11 @@ recipe_configure() {
             else TESTING=""; fi ;;
     esac
 
-    if ask_yn '5 · git init + first commit?' n; then GIT_INIT=1; else GIT_INIT=0; fi
+    if [ "$STACK" = fastapi ]; then
+        _dsvc="db + api"; { [ -n "$BASE" ] && [ "$BASE" != none ]; } && _dsvc="$_dsvc + web"
+        if ask_yn "5 · docker (dev compose: $_dsvc)?" n; then DOCKER=1; else DOCKER=0; fi
+    fi
+    if ask_yn '6 · git init + first commit?' n; then GIT_INIT=1; else GIT_INIT=0; fi
 }
 
 # ── Laravel (PHP) ─────────────────────────────────────────────────────────────
@@ -192,6 +196,218 @@ Monorepo: FastAPI backend + $BASE frontend.
 Point the frontend at the API via an env var (e.g. \`VITE_API_URL=http://localhost:8000\`).
 EOF
     ok "wrote root README.md"
+    return 0
+}
+
+# ── docker (dev compose) ──────────────────────────────────────────────────────
+# Opt-in (--docker / wizard) hot-reload dev stack for the fastapi stack:
+#   db (postgres/mysql, only if a DB is set) + api (uvicorn --reload) [+ web].
+# Source is bind-mounted; deps live in the image and are shielded from the mount by
+# anonymous volumes (/app/.venv, /app/node_modules), so edits reload without a rebuild.
+_fs_db_url() { [ "$DB" = mysql ] && echo 'mysql://app:app@db:3306/app' || echo 'postgresql://app:app@db:5432/app'; }
+
+_fs_web_dev_cmd() {
+    case "$PM" in
+        npm)  echo "npm run dev -- --host 0.0.0.0" ;;
+        yarn) echo "yarn dev --host 0.0.0.0" ;;
+        bun)  echo "bun run dev --host 0.0.0.0" ;;
+        *)    echo "pnpm run dev --host 0.0.0.0" ;;
+    esac
+}
+
+_fs_docker_api_dockerfile() {
+    cat > "$1/Dockerfile" <<'EOF'
+# Dev image for the FastAPI API. Dependencies come from pyproject.toml via `uv sync`.
+# docker-compose bind-mounts the source and preserves this image's .venv with an
+# anonymous volume, so `uvicorn --reload` picks up edits without a rebuild.
+FROM ghcr.io/astral-sh/uv:python3.12-bookworm-slim
+WORKDIR /app
+COPY pyproject.toml ./
+RUN uv sync
+COPY . .
+CMD ["uv", "run", "uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000", "--reload"]
+EOF
+}
+
+_fs_docker_web_dockerfile() {
+    if [ "$PM" = bun ]; then
+        cat > "$1/Dockerfile" <<'EOF'
+# Dev image for the frontend (bun). compose bind-mounts the source and keeps this
+# image's node_modules via an anonymous volume for hot reload.
+FROM oven/bun:1
+WORKDIR /app
+COPY package.json ./
+RUN bun install
+COPY . .
+EOF
+        return 0
+    fi
+    case "$PM" in
+        npm)  _pmi="npm install" ;;
+        yarn) _pmi="corepack enable && yarn install" ;;
+        *)    _pmi="corepack enable && pnpm install" ;;
+    esac
+    cat > "$1/Dockerfile" <<EOF
+# Dev image for the $BASE frontend. compose bind-mounts the source and keeps this
+# image's node_modules via an anonymous volume for hot reload.
+FROM node:22-slim
+WORKDIR /app
+COPY package.json ./
+RUN $_pmi
+COPY . .
+EOF
+}
+
+# minimal pyproject so the api image builds even if the local Python toolchain was absent
+_fs_docker_pyproject() {
+    cat > "$1/pyproject.toml" <<'EOF'
+[project]
+name = "api"
+version = "0.1.0"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi",
+    "uvicorn[standard]",
+]
+EOF
+}
+
+_fs_docker_db_service() {
+    if [ "$DB" = mysql ]; then
+        cat <<'EOF'
+  db:
+    image: mysql:8
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME:-app}
+      MYSQL_USER: ${DB_USER:-app}
+      MYSQL_PASSWORD: ${DB_PASSWORD:-app}
+      MYSQL_ROOT_PASSWORD: ${DB_PASSWORD:-app}
+    ports:
+      - "3306:3306"
+    volumes:
+      - dbdata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+EOF
+    else
+        cat <<'EOF'
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${DB_NAME:-app}
+      POSTGRES_USER: ${DB_USER:-app}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-app}
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-app}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+EOF
+    fi
+}
+
+_fs_docker_api_service() {
+    _mono="$1"; _hasdb="$2"; _amount="$3"
+    printf '  api:\n'
+    printf '    build: %s\n' "$_amount"
+    printf '    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload\n'
+    printf '    volumes:\n      - %s:/app\n      - /app/.venv\n' "$_amount"
+    printf '    ports:\n      - "8000:8000"\n'
+    if [ "$_hasdb" = 1 ]; then
+        printf '    environment:\n      DATABASE_URL: ${DATABASE_URL:-%s}\n' "$(_fs_db_url)"
+        printf '    depends_on:\n      db:\n        condition: service_healthy\n'
+    fi
+    printf '\n'
+}
+
+_fs_docker_web_service() {
+    _port=5173; [ "$BASE" = astro ] && _port=4321
+    printf '  web:\n'
+    printf '    build: ./web\n'
+    printf '    command: %s\n' "$(_fs_web_dev_cmd)"
+    printf '    volumes:\n      - ./web:/app\n      - /app/node_modules\n'
+    printf '    ports:\n      - "%s:%s"\n' "$_port" "$_port"
+    printf '    environment:\n      VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}\n'
+    printf '    depends_on:\n      - api\n\n'
+}
+
+_fs_docker_compose() {
+    _mono="$1"; _hasdb="$2"; _amount="$3"
+    _f="$PROJECT_DIR/docker-compose.yml"
+    printf 'services:\n' > "$_f"
+    [ "$_hasdb" = 1 ] && _fs_docker_db_service >> "$_f"
+    _fs_docker_api_service "$_mono" "$_hasdb" "$_amount" >> "$_f"
+    [ "$_mono" = 1 ] && _fs_docker_web_service >> "$_f"
+    [ "$_hasdb" = 1 ] && printf 'volumes:\n  dbdata:\n' >> "$_f"
+}
+
+_fs_docker_env() {
+    _mono="$1"; _hasdb="$2"
+    _f="$PROJECT_DIR/.env.example"
+    : > "$_f"
+    if [ "$_hasdb" = 1 ]; then
+        {
+            printf '# Database\nDB_NAME=app\nDB_USER=app\nDB_PASSWORD=app\n\n'
+            printf '# API\nDATABASE_URL=%s\n' "$(_fs_db_url)"
+        } >> "$_f"
+    fi
+    [ "$_mono" = 1 ] && printf '\n# Web\nVITE_API_URL=http://localhost:8000\n' >> "$_f"
+}
+
+_fs_docker_makefile() {
+    {
+        printf '.PHONY: up down build logs ps\n\n'
+        printf 'up:\n\tdocker compose up\n\n'
+        printf 'down:\n\tdocker compose down\n\n'
+        printf 'build:\n\tdocker compose build\n\n'
+        printf 'logs:\n\tdocker compose logs -f\n\n'
+        printf 'ps:\n\tdocker compose ps\n'
+    } > "$PROJECT_DIR/Makefile"
+}
+
+_fs_docker_ignore() {
+    if [ "$1" = 1 ]; then
+        printf '%s\n' '.venv' '__pycache__' '.git' > "$PROJECT_DIR/api/.dockerignore"
+        printf '%s\n' 'node_modules' 'dist' '.git' > "$PROJECT_DIR/web/.dockerignore"
+    else
+        printf '%s\n' '.venv' '__pycache__' '.git' > "$PROJECT_DIR/.dockerignore"
+    fi
+}
+
+# _fs_docker <mono>  — 1 = monorepo (api/ + web/), 0 = flat backend.
+_fs_docker() {
+    [ "${DOCKER:-0}" = 1 ] || return 0
+    _mono="$1"
+    head "docker (dev compose)"
+    _hasdb=0; case "$DB" in postgres|mysql) _hasdb=1 ;; esac
+    if [ "$DRY_RUN" = 1 ]; then
+        _svc="api"; [ "$_hasdb" = 1 ] && _svc="db + $_svc"; [ "$_mono" = 1 ] && _svc="$_svc + web"
+        dim "  would write docker-compose.yml ($_svc), Dockerfile(s), .env.example, Makefile"
+        return 0
+    fi
+    if [ "$_mono" = 1 ]; then _actx=api; _amount=./api; else _actx=.; _amount=.; fi
+    # make the api image runnable even if the local Python toolchain was missing
+    [ -f "$PROJECT_DIR/$_actx/app/main.py" ]    || _fs_fastapi_app "$PROJECT_DIR/$_actx"
+    [ -f "$PROJECT_DIR/$_actx/pyproject.toml" ] || _fs_docker_pyproject "$PROJECT_DIR/$_actx"
+    _fs_docker_api_dockerfile "$PROJECT_DIR/$_actx"
+    [ "$_mono" = 1 ] && _fs_docker_web_dockerfile "$PROJECT_DIR/web"
+    _fs_docker_compose "$_mono" "$_hasdb" "$_amount"
+    _fs_docker_env "$_mono" "$_hasdb"
+    _fs_docker_makefile
+    _fs_docker_ignore "$_mono"
+    ok "wrote docker-compose.yml + Dockerfile(s) + .env.example + Makefile"
+    dim "  start:  cp .env.example .env  &&  docker compose up   (or: make up)"
     return 0
 }
 
@@ -333,6 +549,7 @@ recipe_run() {
         *) err "unknown fullstack stack '$STACK' (use laravel|django|fastapi|workers|react-workers)"; exit 1 ;;
     esac
     if [ "$DRY_RUN" = 1 ]; then run mkdir -p "$PROJECT_DIR"; fi
+    [ "$STACK" = fastapi ] && _fs_docker "$_MONO"
 
     # 2 ── overlay ─────────────────────────────────────────────────────────────
     head "2 · overlay"
