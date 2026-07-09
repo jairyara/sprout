@@ -70,7 +70,9 @@ EOF
 _dt_egui() {
     if ! have cargo; then warn "cargo/Rust not found (https://rustup.rs) — empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; fi
     run cargo new "$PROJECT_NAME"
-    in_project cargo add eframe egui
+    # Pin eframe/egui together: the generated src/main.rs targets the 0.28 creator
+    # API (closure returns Result). Pinning removes the version-drift breakage.
+    in_project cargo add eframe@0.28 egui@0.28
     _dt_egui_main
     return 0
 }
@@ -99,7 +101,7 @@ impl eframe::App for App {
     }
 }
 EOF
-    dim "  egui API shifts between versions — adjust src/main.rs if it doesn't compile"
+    dim "  eframe/egui pinned to 0.28 to match this template; bump both together to upgrade"
     return 0
 }
 

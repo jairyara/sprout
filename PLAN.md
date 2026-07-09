@@ -404,13 +404,20 @@ mi-sitio/                       (ejemplo: web Astro+Tailwind)
 ### Pendientes / deuda técnica (para retomar)
 - **Real-test** aún no hecho de: django/fastapi (instalar `uv`), desktop (tauri/wails/
   fyne/egui), mobile (expo/flutter). Solo dry-run verificado.
-- **impeccable** se salta: usa `skill/SKILL.src.md` (no estándar) → enseñar a `resolve.sh`
-  el rename a `SKILL.md`.
-- **kotlin** (Android) y **swift** (iOS) degradan con instrucciones (no hay scaffolder CLI
-  simple); **egui** puede requerir ajuste de API de eframe según versión.
-- Parser de flags: `shift 2` revienta si pasas un flag sin valor (p.ej. `--test` solo).
-- skillsh es más lento (npx por skill, sin cache) — optimizable cacheando por hash.
 - taste/webgpu en registry; web set incluye taste + ui-ux-pro-max.
+
+**Resuelto (2026-07-09):**
+- ✅ **impeccable / rename**: `resolve.sh` gana `has_skill_md`/`normalize_skill_md`; acepta
+  y deriva `SKILL.md` desde `SKILL.src.md`/`SKILL.*.md` (ambas ramas git y skillsh).
+  Verificado end-to-end con un repo-skill local que solo trae `SKILL.src.md`.
+- ✅ **Parser `shift 2`**: helper `_need` valida que cada flag con valor traiga argumento;
+  antes `shift 2` sin valor mataba el script (`set -e`). Ahora error amable + `exit 1`.
+- ✅ **Cache skillsh**: `resolve.sh` cachea el árbol vendorizado en
+  `~/.cache/sprout/skills/skillsh/<name>@<ref>` y lo reutiliza sin re-correr `npx`;
+  `sprout skills update` pasa `SPROUT_REFRESH=1` para forzar re-fetch de latest.
+- ✅ **Degradación**: `egui` fija `eframe@0.28`/`egui@0.28` (el template compila sin
+  ajustes); `kotlin` intenta `gradle init` cuando `gradle` está presente y degrada a
+  instrucciones si falla/no está. `swift` ya usaba `swift package init`.
 
 ---
 

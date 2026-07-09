@@ -295,7 +295,7 @@ cmd_skills() {
             fi
             [ -n "$_specs" ] || { err "nothing to update in $_dir"; exit 1; }
             # shellcheck disable=SC2086
-            DRY_RUN="$DRY_RUN" "$SPROUT_DIR/skills/resolve.sh" "$_dir" $_specs
+            DRY_RUN="$DRY_RUN" SPROUT_REFRESH=1 "$SPROUT_DIR/skills/resolve.sh" "$_dir" $_specs
             "$SPROUT_DIR/skills/sync-agents.sh" "$_dir" ;;
         *) err "unknown skills subcommand: '$_sub' (use add|update)"; exit 1 ;;
     esac
@@ -494,26 +494,31 @@ EOF
 
 # ── recipe runner ────────────────────────────────────────────────────────────
 
+# _need <flag> <next…> — abort with a friendly message if a value-taking flag has
+# no value (or is followed by another flag). Without this, `shift 2` on a missing
+# value aborts the whole script under `set -e` with a cryptic error.
+_need() { [ $# -ge 2 ] && [ "${2#-}" = "$2" ] || { err "option '$1' requires a value"; exit 1; }; }
+
 run_recipe() {
     TYPE="$1"; shift
     PROJECT_NAME=""
     while [ $# -gt 0 ]; do
         case "$1" in
-            --stack)       STACK="$2"; shift 2 ;;
-            --db)          DB="$2"; shift 2 ;;
-            --pm)          PM="$2"; shift 2 ;;
-            --base)        BASE="$2"; shift 2 ;;
-            --css)         CSS="$2"; shift 2 ;;
-            --lang)        LANG="$2"; shift 2 ;;
-            --linter)      LINTER="$2"; shift 2 ;;
-            --test)        TESTING="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
+            --stack)       _need "$@"; STACK="$2"; shift 2 ;;
+            --db)          _need "$@"; DB="$2"; shift 2 ;;
+            --pm)          _need "$@"; PM="$2"; shift 2 ;;
+            --base)        _need "$@"; BASE="$2"; shift 2 ;;
+            --css)         _need "$@"; CSS="$2"; shift 2 ;;
+            --lang)        _need "$@"; LANG="$2"; shift 2 ;;
+            --linter)      _need "$@"; LINTER="$2"; shift 2 ;;
+            --test)        _need "$@"; TESTING="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
             --git)         GIT_INIT=1; shift ;;
             --no-git)      GIT_INIT=0; shift ;;
             --sdd)         SDD_INIT=1; shift ;;
             --no-sdd)      SDD_INIT=0; shift ;;
-            --skills)      SKILLS_SEL="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
-            --agent)       AGENTS_SEL="$2"; shift 2 ;;
-            --clis)        CLIS_INSTALL="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
+            --skills)      _need "$@"; SKILLS_SEL="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
+            --agent)       _need "$@"; AGENTS_SEL="$2"; shift 2 ;;
+            --clis)        _need "$@"; CLIS_INSTALL="$(echo "$2" | tr ',' ' ')"; shift 2 ;;
             --install-clis) INSTALL_CLIS=1; shift ;;
             --dry-run)     DRY_RUN=1; shift ;;
             -*)            err "unknown option: $1"; exit 1 ;;

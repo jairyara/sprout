@@ -29,6 +29,31 @@ registry_field() {
     ' "$REGISTRY"
 }
 
+# has_skill_md <dir> -> true if the dir carries a skill manifest (SKILL.md or a
+# non-standard SKILL.src.md / SKILL.*.md that we can normalize).
+has_skill_md() {
+    _d="$1"
+    [ -f "$_d/SKILL.md" ] && return 0
+    for _c in "$_d/SKILL.src.md" "$_d"/SKILL.*.md; do
+        [ -f "$_c" ] && return 0
+    done
+    return 1
+}
+
+# normalize_skill_md <dir> -> ensure a canonical SKILL.md exists, deriving it from a
+# SKILL.src.md / SKILL.*.md variant (e.g. impeccable ships SKILL.src.md). Idempotent.
+normalize_skill_md() {
+    _d="$1"
+    [ -f "$_d/SKILL.md" ] && return 0
+    for _c in "$_d/SKILL.src.md" "$_d"/SKILL.*.md; do
+        [ -f "$_c" ] || continue
+        cp "$_c" "$_d/SKILL.md"
+        say "normalized $(basename "$_c") -> SKILL.md"
+        return 0
+    done
+    return 1
+}
+
 # fetch_git <url> <ref> <cache_path> -> clones/updates, prints resolved SHA on fd1
 fetch_git() {
     _url="$1"; _ref="$2"; _cp="$3"
@@ -80,21 +105,35 @@ for spec in "$@"; do
                 printf '\033[2m  would run:\033[0m npx --yes skills add %s --skill %s --copy --yes\n' "$sh_url" "$skill_id"
                 ok "would vendor $name -> skills/$name (skills.sh)"; continue
             fi
-            say "fetching $name via skills.sh ($skill_id)"
-            work="$CACHE/.skillsh/$name"
-            rm -rf "$work"; mkdir -p "$work"
-            if ! ( cd "$work" && npx --yes skills add "$sh_url" --skill "$skill_id" --copy --yes ) >/dev/null 2>&1; then
-                warn "skill '$name': skills.sh fetch failed (network or unknown skill) — skipping"; rm -rf "$work"; continue
+            # Persistent cache keyed by name@ref: reuse the vendored tree instead of
+            # re-running npx every time (skills.sh has no cache of its own). `skills
+            # update` sets SPROUT_REFRESH=1 to bypass and re-fetch latest.
+            sh_ref="${ref_override:-latest}"
+            cache_dir="$CACHE/skillsh/$name@$sh_ref"
+            if [ "${SPROUT_REFRESH:-0}" != 1 ] && [ -f "$cache_dir/skill/SKILL.md" ]; then
+                say "using cached $name (skills.sh, $sh_ref)"
+                sha="$(cat "$cache_dir/sha" 2>/dev/null)"; [ -n "$sha" ] || sha="skillsh"
+            else
+                say "fetching $name via skills.sh ($skill_id)"
+                work="$cache_dir/.work"
+                rm -rf "$work" "$cache_dir/skill"; mkdir -p "$work"
+                if ! ( cd "$work" && npx --yes skills add "$sh_url" --skill "$skill_id" --copy --yes ) >/dev/null 2>&1; then
+                    warn "skill '$name': skills.sh fetch failed (network or unknown skill) — skipping"; rm -rf "$work"; continue
+                fi
+                produced="$(find "$work/.agents/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sed -n '1p')"
+                if [ -z "$produced" ] || ! has_skill_md "$produced"; then
+                    warn "skill '$name': skills.sh produced no SKILL.md — skipping"; rm -rf "$work"; continue
+                fi
+                sha="$(awk -F'"' '/computedHash/{print $4; exit}' "$work/skills-lock.json" 2>/dev/null)"
+                [ -n "$sha" ] || sha="skillsh"
+                mkdir -p "$cache_dir"
+                cp -R "$produced" "$cache_dir/skill"
+                rm -rf "$cache_dir/skill/.git" "$work"
+                printf '%s' "$sha" > "$cache_dir/sha"
             fi
-            produced="$(find "$work/.agents/skills" -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sed -n '1p')"
-            if [ -z "$produced" ] || [ ! -f "$produced/SKILL.md" ]; then
-                warn "skill '$name': skills.sh produced no SKILL.md — skipping"; rm -rf "$work"; continue
-            fi
-            sha="$(awk -F'"' '/computedHash/{print $4; exit}' "$work/skills-lock.json" 2>/dev/null)"
-            [ -n "$sha" ] || sha="skillsh"
             rm -rf "$DEST/$name"
-            cp -R "$produced" "$DEST/$name"
-            rm -rf "$DEST/$name/.git" "$work"
+            cp -R "$cache_dir/skill" "$DEST/$name"
+            normalize_skill_md "$DEST/$name" || warn "skill '$name': no SKILL.md after vendoring"
             printf '%s\t%s\t%s\t%s\n' "$name" "$source" "latest" "$sha" >> "$lock_tmp"
             ok "vendored $name -> skills/$name (skills.sh)" ;;
         git:*)
@@ -105,13 +144,16 @@ for spec in "$@"; do
             say "fetching $name ($ref)"
             sha="$(fetch_git "$url" "$ref" "$cache_path")"
             src_dir="$cache_path"; [ -n "$subpath" ] && src_dir="$cache_path/$subpath"
-            if [ "${DRY_RUN:-0}" != 1 ] && [ ! -f "$src_dir/SKILL.md" ]; then
+            if [ "${DRY_RUN:-0}" != 1 ] && ! has_skill_md "$src_dir"; then
                 warn "skill '$name': no SKILL.md at $src_dir — check source/subpath"; continue
             fi
             run rm -rf "$DEST/$name"
             run cp -R "$src_dir" "$DEST/$name"
             run rm -rf "$DEST/$name/.git"
-            [ "${DRY_RUN:-0}" = 1 ] || printf '%s\t%s\t%s\t%s\n' "$name" "$source" "$ref" "$sha" >> "$lock_tmp"
+            if [ "${DRY_RUN:-0}" != 1 ]; then
+                normalize_skill_md "$DEST/$name" || warn "skill '$name': no SKILL.md after vendoring"
+                printf '%s\t%s\t%s\t%s\n' "$name" "$source" "$ref" "$sha" >> "$lock_tmp"
+            fi
             ok "vendored $name -> skills/$name" ;;
         *)
             warn "skill '$name': unknown source scheme '$source' — skipping" ;;

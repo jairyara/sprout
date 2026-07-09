@@ -39,8 +39,20 @@ _mb_flutter() {
 }
 
 _mb_kotlin() {
-    warn "Android (Kotlin) apps are scaffolded from Android Studio / Gradle, not a simple CLI"
     run mkdir -p "$PROJECT_DIR"
+    # Gradle *does* have a CLI scaffolder; use it when present, degrade otherwise.
+    if have gradle; then
+        _pkg="com.example.$(echo "$PROJECT_NAME" | tr '[:upper:]' '[:lower:]' | tr -cd '[:alnum:]')"
+        if in_project gradle init --type kotlin-application --dsl kotlin \
+                --project-name "$PROJECT_NAME" --package "$_pkg" \
+                --test-framework junit-jupiter </dev/null >/dev/null 2>&1; then
+            dim "  Gradle Kotlin app scaffolded; open in Android Studio to add Android targets"
+            return 0
+        fi
+        warn "gradle init failed (older Gradle may prompt) — falling back to instructions"
+    else
+        warn "Android (Kotlin) apps are scaffolded from Android Studio / Gradle, not a simple CLI"
+    fi
     dim "  create the app in Android Studio (New Project → Empty Activity) inside $PROJECT_NAME,"
     dim "  or use a Gradle template; sprout will still wire AGENTS.md + skills here"
     return 0
