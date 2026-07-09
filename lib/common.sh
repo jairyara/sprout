@@ -31,6 +31,17 @@ in_project() {
     ( cd "$PROJECT_DIR" && "$@" )
 }
 
+# Run a command inside an explicit <dir>, honoring DRY_RUN. Like in_project but for
+# a directory the caller names (e.g. a monorepo subpackage such as api/).
+in_dir() {
+    _d="$1"; shift
+    if [ "${DRY_RUN:-0}" = 1 ]; then
+        printf '\033[2m  would run (in %s):\033[0m %s\n' "${_d##*/}" "$*"
+        return 0
+    fi
+    ( cd "$_d" && "$@" )
+}
+
 # in_list <needle> <space-separated haystack> -> 0 if present, 1 otherwise
 in_list() { case " $2 " in *" $1 "*) return 0 ;; *) return 1 ;; esac; }
 
