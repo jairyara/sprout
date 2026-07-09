@@ -32,7 +32,7 @@ STACK=""
 DB=""          # fullstack database: sqlite|postgres|mysql
 PM=""
 # web stack choices (recipe-specific; set by the wizard or these flags)
-BASE=""        # astro | vanilla
+BASE=""        # astro | react | vue | vanilla
 CSS=""         # none | sass | less | tailwind | bootstrap
 LANG=""        # ts | js
 LINTER=""      # biome | eslint | none
@@ -55,7 +55,7 @@ Types:   web  fullstack  desktop  mobile  ext  cli  (Phase 1 ships: web)
 Options:
   --pm <name>             JS package manager for web · desktop/tauri · mobile/react-native ·
                           ext/wxt: pnpm|npm|yarn|bun (def: pnpm if present)
-  --base <name>           web base: astro|react|vanilla (def: astro)
+  --base <name>           web base: astro|react|vue|vanilla (def: astro)
   --css <name>            web css: none|sass|less|tailwind|bootstrap (def: tailwind)
   --lang <name>           language for web · desktop/tauri · mobile/react-native · fullstack/workers: ts|js (def: ts)
   --linter <name>         web linter: none|biome|eslint (def: none)

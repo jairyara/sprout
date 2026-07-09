@@ -18,6 +18,7 @@ recipe_configure() {
     BASE="$(pick_one '1 · base framework' 'astro' "$(printf '%s\n' \
         'astro|astro    — content-first framework (islands, MPA/SSR)' \
         'react|react    — SPA via Vite (@vitejs/plugin-react)' \
+        'vue|vue      — SPA via Vite (@vitejs/plugin-vue)' \
         'vanilla|vanilla  — no framework, just Vite (dev server + build)')")"
 
     CSS="$(pick_one '2 · CSS' 'tailwind' "$(printf '%s\n' \
@@ -67,6 +68,14 @@ _web_scaffold() {
         else
             warn "$PM not found — creating an empty project dir instead"; run mkdir -p "$PROJECT_DIR"
         fi
+    elif [ "$BASE" = vue ]; then
+        _tpl=vue; [ "$LANG" = ts ] && _tpl=vue-ts
+        if have "$PM"; then
+            pm_create vite@latest "$PROJECT_NAME" --template "$_tpl" --no-interactive
+            in_project $(pm_install "$PM")     # vite does not auto-install
+        else
+            warn "$PM not found — creating an empty project dir instead"; run mkdir -p "$PROJECT_DIR"
+        fi
     else
         _flags="--template minimal --install --no-git --skip-houston --yes"
         [ "$CSS" = tailwind ] && _flags="$_flags --add tailwind"   # official Astro integration
@@ -94,6 +103,7 @@ _web_css() {
                 # shellcheck disable=SC2086
                 in_project $(pm_add "$PM") tailwindcss @tailwindcss/vite
                 if [ "$BASE" = react ]; then _web_react_tailwind_wire
+                elif [ "$BASE" = vue ]; then _web_vue_tailwind_wire
                 else _web_vite_tailwind_wire; fi
             fi ;;
         sass)
@@ -101,7 +111,7 @@ _web_css() {
             # shellcheck disable=SC2086
             in_project $(pm_add "$PM") sass
             if [ "$BASE" = vanilla ]; then _web_vite_preprocessor scss
-            else dim "  import .scss from your components/layout (Astro handles Sass natively)"; fi ;;
+            else dim "  import .scss from your components/layout (Astro/Vite handle Sass natively)"; fi ;;
         less)
             say "css: less"
             # shellcheck disable=SC2086
@@ -190,6 +200,40 @@ EOF
     fi
 }
 
+# Wire Tailwind v4 into a Vite Vue project. The vue template ships a vite.config with
+# @vitejs/plugin-vue, so we rewrite it to carry both plugins (deterministic) and prepend
+# the import to src/style.css (the template's entry stylesheet).
+_web_vue_tailwind_wire() {
+    _ext=js; [ "$LANG" = ts ] && _ext=ts
+    if [ "$DRY_RUN" = 1 ]; then
+        dim "  would write vite.config.$_ext with @vitejs/plugin-vue + @tailwindcss/vite and add '@import \"tailwindcss\";' to src/style.css"
+        return 0
+    fi
+    _cfg="$PROJECT_DIR/vite.config.$_ext"
+    [ -e "$PROJECT_DIR/vite.config.ts" ] && _cfg="$PROJECT_DIR/vite.config.ts"
+    [ -e "$PROJECT_DIR/vite.config.js" ] && _cfg="$PROJECT_DIR/vite.config.js"
+    cat > "$_cfg" <<'EOF'
+import { defineConfig } from 'vite'
+import vue from '@vitejs/plugin-vue'
+import tailwindcss from '@tailwindcss/vite'
+
+export default defineConfig({
+  plugins: [vue(), tailwindcss()],
+})
+EOF
+    ok "wrote $(basename "$_cfg") with @vitejs/plugin-vue + @tailwindcss/vite"
+    _css="$PROJECT_DIR/src/style.css"; [ -f "$_css" ] || _css="$(_vite_css_entry)"
+    if [ -z "$_css" ] || [ ! -f "$_css" ]; then
+        warn "no css entry found — add '@import \"tailwindcss\";' to src/style.css manually"; return 0
+    fi
+    if grep -q 'tailwindcss' "$_css" 2>/dev/null; then
+        dim "  $(basename "$_css") already imports tailwindcss"
+    else
+        { printf '@import "tailwindcss";\n\n'; cat "$_css"; } > "$_css.sprout" && mv "$_css.sprout" "$_css"
+        ok "added '@import \"tailwindcss\";' to $(basename "$_css")"
+    fi
+}
+
 # Switch a Vite vanilla project's stylesheet to a preprocessor: rename src/style.css ->
 # style.<ext> and update the import in the main entry. Arg: scss | less.
 _web_vite_preprocessor() {
@@ -267,7 +311,7 @@ _web_git() {
 
 # ── human-readable stack label for AGENTS.md ─────────────────────────────────
 _web_stack_label() {
-    _b="$BASE"; [ "$BASE" = vanilla ] && _b="vanilla (vite)"; [ "$BASE" = react ] && _b="react (vite)"
+    _b="$BASE"; [ "$BASE" = vanilla ] && _b="vanilla (vite)"; [ "$BASE" = react ] && _b="react (vite)"; [ "$BASE" = vue ] && _b="vue (vite)"
     _c="$CSS";  [ "$CSS" = none ] && _c="plain css"
     printf '%s · %s · %s' "$_b" "$_c" "$LANG"
     { [ "$LINTER" != none ] && [ -n "$LINTER" ]; } && printf ' · %s' "$LINTER"
