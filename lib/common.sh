@@ -11,12 +11,19 @@ dim()  { printf '\033[2m%s\033[0m\n' "$1"; }
 
 # ── dry-run aware command runner ─────────────────────────────────────────────
 # Usage: run cmd arg...   Honors DRY_RUN=1 (prints instead of executing).
+# Scaffold sub-commands always read stdin from /dev/null so they run
+# non-interactively: launched from the wizard, stdin is the terminal, and
+# scaffolders (pnpm create vite, create-astro, pnpm install, laravel new, …)
+# would otherwise draw their own prompt, block on it, and — under `set -e` —
+# abort the whole pipeline. The wizard already collected every choice, so these
+# must never prompt. Interactive prompts (pick_one/ask_yn) read /dev/tty or
+# stdin directly, not through these runners, so this redirect is safe.
 run() {
     if [ "${DRY_RUN:-0}" = 1 ]; then
         printf '\033[2m  would run:\033[0m %s\n' "$*"
         return 0
     fi
-    "$@"
+    "$@" </dev/null
 }
 
 # ── presence check ───────────────────────────────────────────────────────────
@@ -28,7 +35,7 @@ in_project() {
         printf '\033[2m  would run (in %s):\033[0m %s\n' "${PROJECT_NAME:-project}" "$*"
         return 0
     fi
-    ( cd "$PROJECT_DIR" && "$@" )
+    ( cd "$PROJECT_DIR" && "$@" </dev/null )
 }
 
 # Run a command inside an explicit <dir>, honoring DRY_RUN. Like in_project but for
@@ -39,7 +46,7 @@ in_dir() {
         printf '\033[2m  would run (in %s):\033[0m %s\n' "${_d##*/}" "$*"
         return 0
     fi
-    ( cd "$_d" && "$@" )
+    ( cd "$_d" && "$@" </dev/null )
 }
 
 # in_list <needle> <space-separated haystack> -> 0 if present, 1 otherwise
