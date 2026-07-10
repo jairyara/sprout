@@ -144,7 +144,10 @@ _fs_fastapi() {
     _dir="${1:-$PROJECT_DIR}"
     run mkdir -p "$_dir"
     if have uv; then
-        in_dir "$_dir" uv init .
+        # --vcs none: never let uv init its own git repo. In the monorepo layout a
+        # nested api/.git makes the root `git add -A` fail ("does not have a commit
+        # checked out") and, under set -e, aborts the whole run. _fs_git owns git.
+        in_dir "$_dir" uv init . --vcs none
         in_dir "$_dir" uv add fastapi "uvicorn[standard]"
         [ "$TESTING" = pytest ] && in_dir "$_dir" uv add --dev pytest httpx
     elif have python3; then
@@ -544,8 +547,10 @@ _fs_git() {
     [ "$GIT_INIT" = 1 ] || return 0
     head "git init + first commit"
     if ! have git; then warn "git not found — skipping"; return 0; fi
-    in_project git init -q
-    in_project git add -A
+    # Guard each step: a failure here (e.g. a nested repo left by a scaffolder)
+    # must not abort the run under set -e — the project is already built.
+    in_project git init -q || { warn "git init failed — skipping"; return 0; }
+    in_project git add -A  || { warn "git add failed — skipping commit"; return 0; }
     in_project git commit -q -m "chore: scaffold with sprout 🌱" \
         || warn "nothing committed (empty or git user not configured)"
     return 0
