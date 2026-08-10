@@ -96,6 +96,29 @@ _fs_laravel_kit() {
     esac
 }
 
+# The starter kits live on their main branch — that is the branch Laravel keeps in
+# step with the current framework release. Their newest git *tag* is still the
+# Laravel 12-era v1.0.x, and asking for the package by name (even with
+# --stability=dev, which is all `laravel new --react` does) resolves to that tag, so
+# a kit scaffold quietly came out a whole major behind the plain Blade one. Naming
+# the branch keeps kits on the newest Laravel without pinning a number here that
+# would go stale on the next release.
+_fs_laravel_kit_pkg() { echo "laravel/$1-starter-kit:dev-main"; }
+
+# Report the Laravel that actually landed. Skeleton and kits are separate packages
+# resolved against the local PHP, so "which major did I get" is a real question — an
+# old PHP silently caps you at an older Laravel, and that is worth seeing at scaffold
+# time rather than discovering it in the docs later.
+_fs_laravel_say_version() {
+    [ "$DRY_RUN" = 1 ] && return 0
+    [ -f "$PROJECT_DIR/composer.json" ] || return 0
+    # No `head` here — sprout defines head() as a section title.
+    _lver="$(sed -n 's/.*"laravel\/framework"[^"]*"[^0-9]*\([0-9][0-9.]*\).*/\1/p' \
+        "$PROJECT_DIR/composer.json" 2>/dev/null | sed -n '1p')"
+    [ -n "$_lver" ] && dim "  laravel $_lver"
+    return 0
+}
+
 # Packagist reachability preflight. Filtered networks (corporate DNS, ISP blocks)
 # sinkhole repo.packagist.org, and composer then dies with `curl error 7 … Failed to
 # connect`, taking the whole run with it under set -e. Warn first, with the mirror
@@ -185,15 +208,18 @@ _fs_laravel() {
     _fs_php_net_check
     if have laravel; then
         _flags="--database=$_ldb --no-interaction"
-        [ -n "$_kit" ] && _flags="$_flags --$_kit"
+        # --using takes a package (the installer's own escape hatch for custom kits)
+        # and passes it to composer verbatim, so it carries the branch that --react
+        # and friends cannot. Anything under laravel/ still counts as a first-party
+        # kit to the installer, so the rest of its flow is unchanged.
+        [ -n "$_kit" ] && _flags="$_flags --using=$(_fs_laravel_kit_pkg "$_kit")"
         [ "$TESTING" = pest ] && _flags="$_flags --pest"
         # shellcheck disable=SC2086
         run laravel new "$PROJECT_NAME" $_flags || { _fs_laravel_failed; return 0; }
         [ -n "$_kit" ] && _fs_laravel_js_build
     elif [ -n "$_kit" ]; then
-        # what `laravel new --<kit>` runs under the hood: the kit is its own package,
-        # published only at dev stability.
-        run composer create-project "laravel/$_kit-starter-kit" "$PROJECT_NAME" --stability=dev \
+        # what `laravel new --<kit>` runs under the hood: the kit is its own package.
+        run composer create-project "$(_fs_laravel_kit_pkg "$_kit")" "$PROJECT_NAME" \
             || { _fs_laravel_failed; return 0; }
         _fs_laravel_js_build
         dim "  set DB_CONNECTION=$_ldb in .env"
@@ -201,6 +227,7 @@ _fs_laravel() {
         run composer create-project laravel/laravel "$PROJECT_NAME" || { _fs_laravel_failed; return 0; }
         dim "  set DB_CONNECTION=$_ldb in .env"
     fi
+    _fs_laravel_say_version
     _fs_laravel_check_pest
 
     # Sail (dev docker) — opt-in. Sail ships with fresh Laravel; sail:install writes
