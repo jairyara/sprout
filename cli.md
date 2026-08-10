@@ -45,8 +45,11 @@ installed tool you can't invoke is useless.
 
 ## JS package managers (you pick one per project)
 
-sprout asks which one to use and drives the scaffolder with it. Default: **pnpm** if
-installed, else npm. Pass `--pm pnpm|npm|yarn|bun` to set it non-interactively.
+sprout asks which one to use and drives the scaffolder with it. The default is always
+**pnpm** — not "whichever is installed", so the same command produces the same
+lockfile on every machine; if pnpm is missing, sprout provisions it through Corepack
+rather than reaching for another manager. Pass `--pm pnpm|npm|yarn|bun` to choose a
+different one non-interactively.
 
 | PM | What it is | Why pick it |
 |---|---|---|

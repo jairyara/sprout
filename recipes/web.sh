@@ -52,6 +52,7 @@ recipe_configure() {
 # JS package-manager helpers (pm_create / pm_install / pm_runtime_add) live in
 # lib/common.sh so every JS recipe (web, desktop, mobile, ext) shares them.
 _web_scaffold() {
+    require_pm || true      # each branch below still guards; this provisions once, up front
     if [ "$BASE" = vanilla ]; then
         _tpl=vanilla; [ "$LANG" = ts ] && _tpl=vanilla-ts
         if have "$PM"; then

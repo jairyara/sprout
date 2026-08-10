@@ -179,11 +179,10 @@ _fs_laravel_failed() {
 # when stdout isn't a TTY (always, here), and pnpm rejects it — the install then
 # silently never happens.
 _fs_laravel_js_build() {
-    if ! have "$PM" && ! have npm; then
-        warn "no JS package manager — skipping the front-end build"
-        dim "  later:  npm install && npm run build"; return 0
+    if ! require_pm; then
+        warn "skipping the front-end build"
+        dim "  later:  $(pm_install "$PM") && $PM run build"; return 0
     fi
-    have "$PM" || PM=npm
     # shellcheck disable=SC2086
     in_project $(pm_install "$PM") || { warn "front-end install failed — run it yourself: $(pm_install "$PM")"; return 0; }
     in_project "$PM" run build     || warn "front-end build failed — run it yourself: $PM run build"
@@ -343,9 +342,7 @@ EOF
 # css + linter steps (sourced) by repointing PROJECT_DIR at web/. Frontend testing
 # is intentionally left to the web plane's own flow (TESTING here is the backend's).
 _fs_frontend() {
-    if ! have "$PM" && ! have npm; then
-        warn "no JS package manager (pnpm/npm/yarn/bun) — skipping frontend (web/)"; return 0
-    fi
+    require_pm || { warn "skipping frontend (web/)"; return 0; }
     . "$SPROUT_DIR/recipes/web.sh"          # _web_css / _web_linter + tailwind wiring helpers
     _sep=""; [ "$PM" = npm ] && _sep="--"   # npm needs `--` before the create script's flags
     _needs_install=0
@@ -609,9 +606,7 @@ _fs_docker() {
 # create-cloudflare (C3) scaffolds a Hono Worker with a wrangler config. Runs through
 # the global $PM (pm_create handles npm's `--` separator). Backend-only / API on the edge.
 _fs_workers() {
-    if ! have "$PM" && ! have npm; then
-        warn "no JS package manager (pnpm/npm/yarn/bun) — creating an empty project dir"; run mkdir -p "$PROJECT_DIR"; return 0
-    fi
+    require_pm || { warn "creating an empty project dir"; run mkdir -p "$PROJECT_DIR"; return 0; }
     _lang=ts; [ "$LANG" = js ] && _lang=js
     # shellcheck disable=SC2086
     pm_create cloudflare@latest "$PROJECT_NAME" --framework=hono --lang="$_lang" --no-git --no-deploy
@@ -629,9 +624,7 @@ _fs_workers() {
 # ── React (Vite) + Hono Worker in one repo (monorepo) ─────────────────────────
 # Frontend in web/, edge API in api/. A root manifest ties them into a workspace.
 _fs_react_workers() {
-    if ! have "$PM" && ! have npm; then
-        warn "no JS package manager (pnpm/npm/yarn/bun) — creating an empty project dir"; run mkdir -p "$PROJECT_DIR"; return 0
-    fi
+    require_pm || { warn "creating an empty project dir"; run mkdir -p "$PROJECT_DIR"; return 0; }
     run mkdir -p "$PROJECT_DIR"
     _tpl=react; [ "$LANG" = ts ] && _tpl=react-ts
     _lang=ts;   [ "$LANG" = js ] && _lang=js

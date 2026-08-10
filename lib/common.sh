@@ -120,11 +120,13 @@ link_alias() {
 # These are PROJECT package managers (run inside the generated project), distinct
 # from the system pkg manager above (brew/pacman) that installs global CLIs.
 
-# default_pm_js -> first installed JS pm, preferring pnpm; falls back to npm.
-default_pm_js() {
-    for _p in pnpm npm yarn bun; do have "$_p" && { echo "$_p"; return 0; }; done
-    echo npm
-}
+# default_pm_js -> the JS package manager sprout defaults to. Always pnpm, never
+# "whatever happens to be installed": that older rule made the default drift per
+# machine, so the same sprout command produced a pnpm lockfile on one box and an npm
+# one on the next. A missing pnpm is a provisioning step (Corepack ships it with
+# Node), not a reason to hand the project to a different package manager. The other
+# managers stay available — they just have to be asked for, via --pm or the wizard.
+default_pm_js() { echo pnpm; }
 
 # pm_dlx <pm> — prefix to run a package's binary without a global install (npx-like)
 pm_dlx() {
@@ -198,6 +200,21 @@ ensure_pm() {
         *)
             warn "unknown package manager: $1" ;;
     esac
+}
+
+# require_pm — make sure $PM can actually run before a recipe leans on it, and try
+# to provision it if not. Recipes used to treat a missing pm as "well, is npm around?"
+# and quietly scaffold with that instead; the project then carried the wrong lockfile
+# for the rest of its life. Provisioning is the honest recovery — pnpm and yarn are
+# one Corepack call away. Returns 1 when it still isn't there, so the caller can skip
+# the JS work rather than fire a command that is guaranteed to fail.
+require_pm() {
+    have "$PM" && return 0
+    say "$PM is not installed — provisioning it"
+    ensure_pm "$PM"
+    have "$PM" && return 0
+    warn "$PM could not be provisioned — install it and re-run"
+    return 1
 }
 
 # ── filesystem helpers ───────────────────────────────────────────────────────

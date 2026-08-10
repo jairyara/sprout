@@ -13,7 +13,7 @@ recipe_configure() {
 }
 
 _ext_wxt() {
-    if ! have "$PM"; then warn "$PM not found — falling back to vanilla MV3"; _ext_vanilla; return 0; fi
+    require_pm || { warn "falling back to vanilla MV3"; _ext_vanilla; return 0; }
     # wxt init honours --pm (pnpm|npm|yarn|bun) for the install it runs.
     # shellcheck disable=SC2086
     run $(pm_dlx "$PM") wxt@latest init "$PROJECT_NAME" --template vanilla --pm "$PM"

@@ -24,7 +24,7 @@ recipe_configure() {
 }
 
 _mb_react_native() {
-    if ! have "$PM"; then warn "$PM not found — empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; fi
+    require_pm || { warn "empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; }
     _tpl=blank; [ "$LANG" = ts ] && _tpl=blank-typescript
     # Expo picks its install pm from the one used to invoke create-expo-app.
     pm_create expo-app@latest "$PROJECT_NAME" --template "$_tpl"

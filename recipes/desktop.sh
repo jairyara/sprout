@@ -23,7 +23,7 @@ recipe_configure() {
 }
 
 _dt_tauri() {
-    if ! have "$PM"; then warn "$PM not found — empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; fi
+    require_pm || { warn "empty dir"; run mkdir -p "$PROJECT_DIR"; return 0; }
     _tpl=vanilla; [ "$LANG" = ts ] && _tpl=vanilla-ts
     # create-tauri-app honours --manager (pnpm|npm|yarn|bun) for the web frontend.
     pm_create tauri-app@latest "$PROJECT_NAME" --template "$_tpl" --manager "$PM" --yes

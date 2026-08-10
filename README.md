@@ -55,7 +55,7 @@ either installed for you (assisted) or by you (manual).
 |---|---|---|
 | `sh` + `git` | run sprout, init repos | Pre-installed on macOS/Linux. |
 | `brew` (macOS/Linux) **or** `pacman` (Arch) | assisted CLI install | Without one, install the core CLIs manually (see below). |
-| Node + a JS package manager | web/JS scaffolders | `pnpm` (default) / `npm` / `yarn` / `bun`. sprout can provision via Corepack. |
+| Node + a JS package manager | web/JS scaffolders | `pnpm` — always the default, provisioned via Corepack if missing. `npm` / `yarn` / `bun` on request (`--pm`). |
 
 ---
 
@@ -267,7 +267,7 @@ ti (asistido) o por ti mismo (manual).
 |---|---|---|
 | `sh` + `git` | correr sprout, iniciar repos | Ya vienen en macOS/Linux. |
 | `brew` (macOS/Linux) **o** `pacman` (Arch) | instalación asistida de CLIs | Sin alguno, instala las CLIs core a mano (más abajo). |
-| Node + gestor JS | scaffolders web/JS | `pnpm` (def.) / `npm` / `yarn` / `bun`. sprout puede aprovisionarlo con Corepack. |
+| Node + gestor JS | scaffolders web/JS | `pnpm` — siempre el default, y sprout lo aprovisiona con Corepack si falta. `npm` / `yarn` / `bun` bajo pedido (`--pm`). |
 
 ---
 

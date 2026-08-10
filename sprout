@@ -55,7 +55,7 @@ Types:   web  fullstack  desktop  mobile  ext  cli  (Phase 1 ships: web)
 
 Options:
   --pm <name>             JS package manager for web · desktop/tauri · mobile/react-native ·
-                          ext/wxt: pnpm|npm|yarn|bun (def: pnpm if present)
+                          ext/wxt: pnpm|npm|yarn|bun (def: pnpm, provisioned if missing)
   --base <name>           web base / fullstack frontend: astro|react|vue|vanilla
                           (web def: astro; fullstack def: none = backend only)
                           fullstack/laravel takes a starter kit instead:
@@ -262,7 +262,10 @@ cmd_doctor() {
     else warn "missing: git — needed for 'git init' and skill downloads"; fi
     _js="$(default_pm_js)"
     if have "$_js"; then ok "JS package manager: $_js"
-    else warn "no JS package manager (pnpm/npm/yarn/bun) — needed for web, ext, mobile (expo)"; fi
+    else
+        warn "missing: $_js — sprout's JS package manager (web, ext, mobile, workers)"
+        dim "  sprout provisions it when it scaffolds, or: corepack enable && corepack prepare $_js@latest --activate"
+    fi
 
     head "scaffolders & toolchains (per type — only what you'll scaffold)"
     dim "  web       — uses your JS package manager (Astro/Vite); no extra tool"
@@ -606,9 +609,9 @@ wizard() {
             if have "$_p"; then printf '%s|%s  (installed)\n' "$_p" "$_p"
             else               printf '%s|%s  (missing)\n'   "$_p" "$_p"; fi
         done)"
-        _pm_default="$(for _p in pnpm npm yarn bun; do have "$_p" && { echo "$_p"; break; }; done)"
-        [ -n "$_pm_default" ] || _pm_default="npm"
-        PM="$(pick_one 'Package manager' "$_pm_default" "$_pm_items")"
+        # pnpm is preselected whether or not it is installed — the default should be
+        # the same everywhere, and the prompt right below offers to provision it.
+        PM="$(pick_one 'Package manager' "$(default_pm_js)" "$_pm_items")"
         if ! have "$PM"; then
             if ask_yn "     $PM isn't installed — install it now?" y; then ensure_pm "$PM"
             else warn "$PM not installed — scaffolding will fall back to an empty dir"; fi
