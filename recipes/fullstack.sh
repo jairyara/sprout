@@ -2,9 +2,11 @@
 #   stack     laravel (PHP) | django (Python) | fastapi (Python)
 #             workers (Hono API on Cloudflare Workers) | react-workers (React + Worker monorepo)
 #   database  sqlite | postgres | mysql   (relational stacks only; workers use D1/KV/R2 bindings)
-#   frontend  none (default) | react | vue | astro | vanilla  — fastapi only for now.
+#   frontend  none (default) | react | vue | astro | vanilla  — fastapi.
 #             Choosing one makes a monorepo: FastAPI in api/, the frontend in web/
 #             (reuses the web plane). No frontend ⇒ flat backend, as before.
+#             laravel takes its own set — none | livewire | react | vue | svelte —
+#             which selects an official Laravel starter kit (one app, not a monorepo).
 #   docker    --docker (opt-in). fastapi ⇒ dev docker-compose (db + api [+ web]).
 #             laravel ⇒ Laravel Sail (php artisan sail:install). No PHP toolchain ⇒
 #             laravel.build (Docker-only installer); no Python toolchain ⇒ the api
@@ -39,7 +41,8 @@ recipe_configure() {
                 'sqlite|sqlite    — zero-config file DB (great to start)' \
                 'postgres|postgres  — production-grade relational DB' \
                 'mysql|mysql     — popular relational DB')")"
-            # frontend (adds a web/ package → monorepo). Only wired for fastapi so far.
+            # frontend. On fastapi it adds a web/ package (→ monorepo); on laravel it
+            # picks an official starter kit (one app, its own build pipeline).
             if [ "$STACK" = fastapi ]; then
                 _fe="$(pick_one '3 · frontend (optional — adds web/)' 'none' "$(printf '%s\n' \
                     'none|none    — backend / API only' \
@@ -54,6 +57,13 @@ recipe_configure() {
                         'js|javascript')")"
                     if ask_yn '    tailwind css in the frontend?' y; then CSS=tailwind; else CSS=""; fi
                 fi
+            elif [ "$STACK" = laravel ]; then
+                BASE="$(pick_one '3 · frontend (starter kit)' 'none' "$(printf '%s\n' \
+                    'none|none     — Blade only, no starter kit' \
+                    'livewire|livewire — Livewire + Flux UI (PHP-first, no SPA)' \
+                    'react|react    — React + Inertia (Tailwind, shadcn/ui)' \
+                    'vue|vue      — Vue + Inertia (Tailwind, shadcn-vue)' \
+                    'svelte|svelte   — Svelte + Inertia (Tailwind)')")"
             fi
             if ask_yn '4 · scaffold tests (Pest for Laravel / pytest for Python)?' n; then
                 case "$STACK" in laravel) TESTING=pest ;; *) TESTING=pytest ;; esac
@@ -71,20 +81,52 @@ recipe_configure() {
 }
 
 # ── Laravel (PHP) ─────────────────────────────────────────────────────────────
+# Frontend ($BASE) = one of Laravel's official starter kits: livewire (Flux UI),
+# react / vue / svelte (Inertia + Tailwind). Empty/none = plain Blade app.
 # Docker for Laravel = Sail (its native docker-compose). Opt-in via --docker, which
 # runs `php artisan sail:install`. With no PHP/composer we fall back to laravel.build,
 # the official Docker-only installer (creates a Laravel+Sail app with zero local PHP).
+
+# _fs_laravel_kit -> starter-kit slug for $BASE, empty for none / a non-Laravel base.
+_fs_laravel_kit() {
+    case "$BASE" in
+        react|vue|svelte|livewire) echo "$BASE" ;;
+        ""|none) echo "" ;;
+        *) warn "'$BASE' is not a Laravel starter kit (use livewire|react|vue|svelte) — Blade only"; echo "" ;;
+    esac
+}
+
+# Install + build the kit's front end (kits ship a Vite/Tailwind pipeline and no
+# built assets). We do this ourselves rather than via the installer's
+# --npm/--pnpm/--bun/--yarn flags: those append `--no-ansi` to the package manager
+# when stdout isn't a TTY (always, here), and pnpm rejects it — the install then
+# silently never happens.
+_fs_laravel_js_build() {
+    if ! have "$PM" && ! have npm; then
+        warn "no JS package manager — skipping the front-end build"
+        dim "  later:  npm install && npm run build"; return 0
+    fi
+    have "$PM" || PM=npm
+    # shellcheck disable=SC2086
+    in_project $(pm_install "$PM") || { warn "front-end install failed — run it yourself: $(pm_install "$PM")"; return 0; }
+    in_project "$PM" run build     || warn "front-end build failed — run it yourself: $PM run build"
+    return 0
+}
+
 _fs_laravel() {
     _ldb=sqlite; case "$DB" in postgres) _ldb=pgsql ;; mysql) _ldb=mysql ;; esac
     _sail=pgsql;  case "$DB" in mysql) _sail=mysql ;; sqlite|"") _sail=mailpit ;; esac  # sail service(s)
+    _kit="$(_fs_laravel_kit)"
 
     if ! have laravel && ! have composer; then
         if have docker; then
             say "no PHP/composer — scaffolding via Docker (laravel.build, includes Sail)"
+            [ -n "$_kit" ] && warn "laravel.build cannot install the $_kit starter kit — plain Blade app"
             # shellcheck disable=SC2086
             run sh -c "curl -s 'https://laravel.build/$PROJECT_NAME?with=$_sail' | bash" \
                 || warn "laravel.build failed (needs network + Docker running)"
             dim "  start:  cd $PROJECT_NAME && ./vendor/bin/sail up"
+            [ -n "$_kit" ] && dim "  for the kit, install PHP+composer and re-run, or: composer create-project laravel/$_kit-starter-kit $PROJECT_NAME --stability=dev"
             return 0
         fi
         warn "no laravel/composer and no docker — creating an empty project dir"
@@ -94,9 +136,17 @@ _fs_laravel() {
 
     if have laravel; then
         _flags="--database=$_ldb --no-interaction"
+        [ -n "$_kit" ] && _flags="$_flags --$_kit"
         [ "$TESTING" = pest ] && _flags="$_flags --pest"
         # shellcheck disable=SC2086
         run laravel new "$PROJECT_NAME" $_flags
+        [ -n "$_kit" ] && _fs_laravel_js_build
+    elif [ -n "$_kit" ]; then
+        # what `laravel new --<kit>` runs under the hood: the kit is its own package,
+        # published only at dev stability.
+        run composer create-project "laravel/$_kit-starter-kit" "$PROJECT_NAME" --stability=dev
+        _fs_laravel_js_build
+        dim "  set DB_CONNECTION=$_ldb in .env"
     else
         run composer create-project laravel/laravel "$PROJECT_NAME"
         dim "  set DB_CONNECTION=$_ldb in .env"
@@ -109,6 +159,8 @@ _fs_laravel() {
         in_project composer require laravel/sail --dev --no-interaction || warn "could not add laravel/sail (network?)"
         in_project php artisan sail:install --with="$_sail" || warn "sail:install failed"
         dim "  start:  ./vendor/bin/sail up"
+    elif [ -n "$_kit" ]; then
+        dim "  dev:    composer run dev   (php server + queue + vite in one command)"
     fi
     return 0
 }
@@ -572,6 +624,7 @@ recipe_run() {
         *) DB="${DB:-sqlite}"; STACK_LABEL="$STACK · $DB" ;;
     esac
     [ "$_MONO" = 1 ] && STACK_LABEL="$STACK_LABEL + $FRONTEND (web/)"
+    [ "$STACK" = laravel ] && [ -n "$FRONTEND" ] && STACK_LABEL="$STACK_LABEL · $FRONTEND kit"
     [ "$STACK" = laravel ] && [ "$DOCKER" = 1 ] && STACK_LABEL="$STACK_LABEL · sail"
     if [ -n "$TESTING" ]; then STACK_LABEL="$STACK_LABEL · $TESTING"; fi
 

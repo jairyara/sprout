@@ -187,7 +187,8 @@ sprout --version
 **Common options** (see `sprout --help` for all):
 
 ```sh
---base <name>           web base: astro|react|vanilla (default: astro)
+--base <name>           web base: astro|react|vue|vanilla (default: astro)
+                        fullstack/laravel starter kit: livewire|react|vue|svelte
 --stack <name>          stack variant (e.g. fullstack: laravel|django|fastapi|workers|react-workers)
 --skills "a,b@1.2.0"    override the skill set; pin a skill with name@ref
 --agent "claude gemini" agent context to wire (default: claude)
@@ -199,8 +200,8 @@ sprout --version
 
 | Type | Default | Variants (`--stack` / `--base`) |
 |---|---|---|
-| `web` | Astro + Tailwind | `--base` react (Vite SPA) · vanilla (Vite) |
-| `fullstack` | Laravel | django · fastapi · workers (Hono/Cloudflare) · react-workers (monorepo) |
+| `web` | Astro + Tailwind | `--base` react (Vite SPA) · vue (Vite SPA) · vanilla (Vite) |
+| `fullstack` | Laravel | django · fastapi · workers (Hono/Cloudflare) · react-workers (monorepo)<br>`--base` on laravel = starter kit: livewire · react · vue · svelte<br>`--base` on fastapi = api/ + web/ monorepo |
 | `desktop` | Tauri | wails · fyne · egui |
 | `mobile` | React Native | flutter · kotlin · swift |
 | `ext` | Chromium MV3 | wxt |
@@ -400,7 +401,8 @@ sprout --version
 **Opciones comunes** (todas en `sprout --help`):
 
 ```sh
---base <nombre>         base web: astro|react|vanilla (def.: astro)
+--base <nombre>         base web: astro|react|vue|vanilla (def.: astro)
+                        starter kit de fullstack/laravel: livewire|react|vue|svelte
 --stack <nombre>        variante de stack (p. ej. fullstack: laravel|django|fastapi|workers|react-workers)
 --skills "a,b@1.2.0"    sobrescribe el set de skills; fija una con nombre@ref
 --agent "claude gemini" contexto de agente a cablear (def.: claude)
@@ -412,8 +414,8 @@ sprout --version
 
 | Tipo | Por defecto | Variantes (`--stack` / `--base`) |
 |---|---|---|
-| `web` | Astro + Tailwind | `--base` react (SPA Vite) · vanilla (Vite) |
-| `fullstack` | Laravel | django · fastapi · workers (Hono/Cloudflare) · react-workers (monorepo) |
+| `web` | Astro + Tailwind | `--base` react (SPA Vite) · vue (SPA Vite) · vanilla (Vite) |
+| `fullstack` | Laravel | django · fastapi · workers (Hono/Cloudflare) · react-workers (monorepo)<br>`--base` en laravel = starter kit: livewire · react · vue · svelte<br>`--base` en fastapi = monorepo api/ + web/ |
 | `desktop` | Tauri | wails · fyne · egui |
 | `mobile` | React Native | flutter · kotlin · swift |
 | `ext` | Chromium MV3 | wxt |

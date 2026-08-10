@@ -58,6 +58,8 @@ Options:
                           ext/wxt: pnpm|npm|yarn|bun (def: pnpm if present)
   --base <name>           web base / fullstack frontend: astro|react|vue|vanilla
                           (web def: astro; fullstack def: none = backend only)
+                          fullstack/laravel takes a starter kit instead:
+                          livewire|react|vue|svelte
   --css <name>            web css: none|sass|less|tailwind|bootstrap (def: tailwind)
   --lang <name>           language for web · desktop/tauri · mobile/react-native · fullstack/workers: ts|js (def: ts)
   --linter <name>         web linter: none|biome|eslint (def: none)
