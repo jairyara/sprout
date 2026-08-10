@@ -96,6 +96,41 @@ _fs_laravel_kit() {
     esac
 }
 
+# Packagist reachability preflight. Filtered networks (corporate DNS, ISP blocks)
+# sinkhole repo.packagist.org, and composer then dies with `curl error 7 … Failed to
+# connect`, taking the whole run with it under set -e. Warn first, with the mirror
+# escape hatch, so a network problem doesn't look like a sprout bug. Skipped when a
+# custom packagist repo (a mirror) is already configured.
+_fs_php_net_check() {
+    [ "$DRY_RUN" = 1 ] && return 0
+    have curl || return 0
+    if have composer; then
+        # A mirror is configured under its own repo name (`repos.packagist`), while
+        # the built-in packagist.org entry stays in the listing — so the question is
+        # whether ANY configured repository points somewhere other than packagist.
+        # (`composer config -g repos.<name>.url` can't address a name with dots.)
+        if composer config -gl 2>/dev/null | grep -i '^\[repositories\..*\.url\]' \
+            | grep -iqv 'repo\.packagist\.org'; then
+            return 0
+        fi
+    fi
+    curl -fsS --max-time 6 -o /dev/null https://repo.packagist.org/packages.json 2>/dev/null && return 0
+    warn "repo.packagist.org is unreachable from this network — composer will fail"
+    dim "  usually DNS filtering or a firewall; a VPN fixes it, or use a Composer mirror:"
+    dim "    composer config -g repos.packagist composer https://<mirror>   (undo: -g --unset repos.packagist)"
+    return 0
+}
+
+# The scaffolder died (almost always: composer could not reach packagist). Keep the
+# run alive — the rest of the pipeline (overlay, AGENTS.md, skills) is still useful,
+# and the user can re-run the PHP part once the network is fixed.
+_fs_laravel_failed() {
+    warn "the Laravel scaffolder failed — continuing with an empty project dir"
+    dim "  most likely composer could not reach packagist (see the hint above)"
+    run mkdir -p "$PROJECT_DIR"
+    return 0
+}
+
 # Install + build the kit's front end (kits ship a Vite/Tailwind pipeline and no
 # built assets). We do this ourselves rather than via the installer's
 # --npm/--pnpm/--bun/--yarn flags: those append `--no-ansi` to the package manager
@@ -110,6 +145,19 @@ _fs_laravel_js_build() {
     # shellcheck disable=SC2086
     in_project $(pm_install "$PM") || { warn "front-end install failed — run it yourself: $(pm_install "$PM")"; return 0; }
     in_project "$PM" run build     || warn "front-end build failed — run it yourself: $PM run build"
+    return 0
+}
+
+# `laravel new --pest` requires pest *after* creating the app and only prints the
+# solver's complaint if it fails (starter kit and pest-plugin-laravel drift apart
+# often), leaving composer.json asking for a package that never landed in vendor/.
+# Say so, rather than letting the run claim a test setup it doesn't have.
+_fs_laravel_check_pest() {
+    [ "$TESTING" = pest ] || return 0
+    [ "$DRY_RUN" = 1 ] && return 0
+    [ -x "$PROJECT_DIR/vendor/bin/pest" ] && return 0
+    warn "Pest was requested but is not installed — composer could not resolve it"
+    dim "  retry in the project:  composer require pestphp/pest pestphp/pest-plugin-laravel --dev -W"
     return 0
 }
 
@@ -134,23 +182,26 @@ _fs_laravel() {
         run mkdir -p "$PROJECT_DIR"; return 0
     fi
 
+    _fs_php_net_check
     if have laravel; then
         _flags="--database=$_ldb --no-interaction"
         [ -n "$_kit" ] && _flags="$_flags --$_kit"
         [ "$TESTING" = pest ] && _flags="$_flags --pest"
         # shellcheck disable=SC2086
-        run laravel new "$PROJECT_NAME" $_flags
+        run laravel new "$PROJECT_NAME" $_flags || { _fs_laravel_failed; return 0; }
         [ -n "$_kit" ] && _fs_laravel_js_build
     elif [ -n "$_kit" ]; then
         # what `laravel new --<kit>` runs under the hood: the kit is its own package,
         # published only at dev stability.
-        run composer create-project "laravel/$_kit-starter-kit" "$PROJECT_NAME" --stability=dev
+        run composer create-project "laravel/$_kit-starter-kit" "$PROJECT_NAME" --stability=dev \
+            || { _fs_laravel_failed; return 0; }
         _fs_laravel_js_build
         dim "  set DB_CONNECTION=$_ldb in .env"
     else
-        run composer create-project laravel/laravel "$PROJECT_NAME"
+        run composer create-project laravel/laravel "$PROJECT_NAME" || { _fs_laravel_failed; return 0; }
         dim "  set DB_CONNECTION=$_ldb in .env"
     fi
+    _fs_laravel_check_pest
 
     # Sail (dev docker) — opt-in. Sail ships with fresh Laravel; sail:install writes
     # docker-compose.yml with the chosen services. Guarded so a failure doesn't abort.
