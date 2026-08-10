@@ -105,6 +105,25 @@ _fs_laravel_kit() {
 # would go stale on the next release.
 _fs_laravel_kit_pkg() { echo "laravel/$1-starter-kit:dev-main"; }
 
+# `laravel new` rewrites APP_URL in the generated .env, and installers before 5.31
+# do it with a plain string replace of `APP_URL=http://localhost`. The Laravel 13
+# starter kits ship `APP_URL=http://localhost:8000`, so that replace matches the
+# prefix and leaves the old port trailing — `http://localhost:8000:8000`. The URI is
+# then invalid and *every* artisan command in the fresh project dies with "Invalid
+# URI: Host is malformed". Upstream anchored the replace in 5.31; repair it here so
+# an outdated global installer can't hand back a project that won't boot.
+_fs_laravel_fix_app_url() {
+    [ "$DRY_RUN" = 1 ] && return 0
+    _envf="$PROJECT_DIR/.env"
+    [ -f "$_envf" ] || return 0
+    grep -q '^APP_URL=.*:[0-9][0-9]*:[0-9][0-9]*$' "$_envf" 2>/dev/null || return 0
+    sed 's/^\(APP_URL=.*:[0-9][0-9]*\):[0-9][0-9]*$/\1/' "$_envf" > "$_envf.sprout" \
+        && mv "$_envf.sprout" "$_envf" || { rm -f "$_envf.sprout"; return 0; }
+    warn "fixed a doubled port in APP_URL (bug in laravel installer < 5.31)"
+    dim "  cure the cause too:  composer global update laravel/installer"
+    return 0
+}
+
 # Report the Laravel that actually landed. Skeleton and kits are separate packages
 # resolved against the local PHP, so "which major did I get" is a real question — an
 # old PHP silently caps you at an older Laravel, and that is worth seeing at scaffold
@@ -216,6 +235,7 @@ _fs_laravel() {
         [ "$TESTING" = pest ] && _flags="$_flags --pest"
         # shellcheck disable=SC2086
         run laravel new "$PROJECT_NAME" $_flags || { _fs_laravel_failed; return 0; }
+        _fs_laravel_fix_app_url
         [ -n "$_kit" ] && _fs_laravel_js_build
     elif [ -n "$_kit" ]; then
         # what `laravel new --<kit>` runs under the hood: the kit is its own package.
